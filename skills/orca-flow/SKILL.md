@@ -13,7 +13,7 @@ description: Use when work spans several repos (or several people touching one r
 ## 전제
 
 - **Orca 앱과 `orca` CLI가 있어야 한다.** 스크립트 실행에 필요하다.
-- **레포가 Orca에 등록돼 있어야 한다.** 스크립트는 레포를 경로가 아니라 등록된 displayName으로 받는다. `orca repo list --json`으로 확인한다.
+- **레포가 Orca에 등록돼 있어야 한다.** 스크립트는 레포를 경로가 아니라 등록된 displayName으로 받는다. `bin/dispatch.sh --repos`로 확인한다.
 - 프로젝트 루트의 `.orca-flow.json`이 기준 브랜치, 에이전트 명령, 셋업 대상을 정한다. 없으면 기본값을 사용한다.
 
 ## 우산 레포에서 시작한다

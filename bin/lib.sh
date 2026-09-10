@@ -169,7 +169,8 @@ resolve_repo() {
   path="$(repo_path "$name")"
   [ -n "$path" ] || die "orca에 등록되지 않은 레포다: $name
 같은 그룹: $(repo_names | tr '\n' ' ')
-전부 보려면 repo_names --all 이다. 등록은 Orca 앱에서 하거나 orca repo add 로 한다."
+전부 보려면 $PLUGIN_ROOT/bin/dispatch.sh --repos --all 이다.
+등록은 Orca 앱에서 하거나 orca repo add 로 한다."
   printf '%s' "$path"
 }
 

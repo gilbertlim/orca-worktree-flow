@@ -13,7 +13,7 @@
 ## 전제
 
 - **Orca 앱과 `orca` CLI.** 스크립트 실행에 필요하다.
-- **레포가 Orca에 등록돼 있어야 한다.** 스크립트는 레포를 경로가 아니라 등록된 displayName으로 받는다. `orca repo list --json`으로 확인한다.
+- **레포가 Orca에 등록돼 있어야 한다.** 스크립트는 레포를 경로가 아니라 등록된 displayName으로 받는다. `bin/dispatch.sh --repos`로 확인한다.
 - `git`, `python3`, `bash`. python3는 표준 라이브러리만 쓴다.
 
 ## 설치
