@@ -16,32 +16,57 @@ description: Use when work spans several repos (or several people touching one r
 - **레포가 Orca에 등록돼 있어야 한다.** 스크립트는 레포를 경로가 아니라 등록된 displayName으로 받는다. `orca repo list --json`으로 확인한다.
 - 프로젝트 루트의 `.orca-flow.json`이 기준 브랜치, 에이전트 명령, 셋업 대상을 정한다. 없으면 기본값으로 돈다.
 
+## 우산 레포에서 시작한다
+
+레포가 여럿인 일은 우산 레포 하나가 들고, 거기서 서브 레포로 몫을 내보낸다. 그때 **우산 레포에도 먼저 워크트리를 딴다.** 오케스트레이터가 메인 체크아웃에 앉아 있으면 진행 문서와 계약 초안이 남의 브랜치와 섞이고, 우산이 둘 이상 도는 순간 어느 서브 워크트리가 누구 몫인지 물어볼 자리가 없다.
+
+우산 워크트리 안에서 `dispatch.sh`를 부르면 서브 레포에 만들어지는 이름 앞에 `<우산레포>.<우산워크트리>.` 가 붙는다.
+
+```
+우산:  orca-plugin/orca-check
+서브:  orca-plugin-sub-repo/orca-plugin.orca-check.login-api
+```
+
+접두는 표시가 아니라 소유 기록이다. `status.sh`가 그것으로 남의 워크트리를 걸러내고, 별도 인덱스 파일을 안 두는 이유도 여기 있다. 사람이 Orca UI에서 워크트리를 지우면 인덱스는 곧 실제와 어긋나지만 이름은 워크트리와 같이 사라진다.
+
+우산 밖에서 불러도 돌아간다. 접두 없이 만들고 경고 한 줄이 나간다. 레포 하나를 혼자 쓰는 쓰임을 안 깨려는 것이고, 우산을 손으로 지정하려면 `ORCA_OWNER=<repo>.<name>` 을 앞에 붙인다.
+
+접두는 워크트리 이름에만 붙는다. 터미널 탭 제목에는 사람이 준 이름(`login-api`)만 남는다 — 탭이 이미 그 워크트리 안에 앉아서 레포도 우산도 제목에서는 중복이다.
+
+**한 우산 워크트리는 기능 하나만 든다.** 오케스트레이터의 컨텍스트는 서브 레포 수만큼 빨리 차고, 차고 나면 무엇을 왜 그렇게 정했는지가 요약에 눌려 사라진다. 두 번째 기능은 같은 우산 레포에 워크트리를 새로 따서 거기서 시작한다.
+
 ## 한 사이클
 
 ```bash
+# 0. 우산 레포에 워크트리를 따고 그 안에서 아래를 부른다
+#    (Orca UI에서 만들거나 orca worktree create --repo "name:<우산레포>" --name <이름>)
+
 # 1. 프롬프트를 파일로 쓴다
 $EDITOR /tmp/shared-trade.md
 
-# 2. 워크트리를 따고 에이전트를 붙인다
+# 2. 워크트리를 따고 에이전트를 붙인다. 이름에 우산 접두가 붙어서 나온다
 ${CLAUDE_PLUGIN_ROOT}/bin/dispatch.sh shared migration-platform-trade /tmp/shared-trade.md
+#   -> shared/orca-plugin.orca-check.migration-platform-trade
 
-# 3. 진행을 본다
+# 3. 진행을 본다. 우산 워크트리 안이면 제 것만 찍는다
 ${CLAUDE_PLUGIN_ROOT}/bin/status.sh
 
 # 4. 커밋이 서면 같은 워크트리에서 리뷰어를 띄운다. 결과는 파일로 떨어진다
-${CLAUDE_PLUGIN_ROOT}/bin/review.sh shared migration-platform-trade
+${CLAUDE_PLUGIN_ROOT}/bin/review.sh shared orca-plugin.orca-check.migration-platform-trade
 
 # 5. blocking이 있으면 그 워크트리의 작업 에이전트에게 되돌린다
-${CLAUDE_PLUGIN_ROOT}/bin/handback.sh shared migration-platform-trade
+${CLAUDE_PLUGIN_ROOT}/bin/handback.sh shared orca-plugin.orca-check.migration-platform-trade
 
 # 6. 고쳐서 커밋되면 같은 리뷰어에게 재리뷰를 시킨다. 4번을 다시 부르면 된다
 
 # 7. 판정이 닫히면 기준 브랜치에 머지하고 push한 뒤 워크트리를 지운다
-${CLAUDE_PLUGIN_ROOT}/bin/land.sh shared migration-platform-trade
+${CLAUDE_PLUGIN_ROOT}/bin/land.sh shared orca-plugin.orca-check.migration-platform-trade
 ```
 
+2번 뒤로는 `status.sh`가 찍어 준 이름을 그대로 복사해 넘긴다. 접두를 다시 붙이지 않아도 되게, 이미 붙어 있는 이름은 그대로 통과한다.
+
 레포가 넷이면 2번을 넷 나란히 부른다. 디렉터리가 겹치지 않아 서로를 안 건드린다. <br>
-5번과 6번은 blocking이 없어질 때까지 돈다. 도는 자리는 언제나 그 워크트리 안이고, 오케스트레이터는 판정 파일만 읽는다.
+5번과 6번은 blocking이 없어질 때까지 돌지만 상한이 있다. 도는 자리는 언제나 그 워크트리 안이고, 오케스트레이터는 판정 파일만 읽는다.
 
 ## 무엇을 워크트리로 가르나
 
@@ -75,7 +100,7 @@ Orca 워크스페이스 카드에 한 줄짜리 코멘트와 보드 상태(`todo
 |------|------|----------------|
 | dispatch가 에이전트를 붙일 때 | `in-progress` | 에이전트 투입 |
 | 작업 에이전트가 마디를 지날 때 | 그대로 | 그 에이전트가 직접 쓴 한 줄 |
-| review가 리뷰어를 띄울 때 | `in-review` | 리뷰 중 (커밋 N개) |
+| review가 리뷰어를 띄울 때 | `in-review` | 리뷰 N차 (커밋 M개) |
 | 리뷰어가 판정 파일을 다 썼을 때 | 그대로 | 리뷰: blocking N건, 또는 리뷰 통과 |
 | handback이 되돌릴 때 | `in-progress` | 재작업 -- 리뷰 blocking 반영 |
 | land가 push까지 끝냈을 때 | `completed` | 기준 브랜치에 머지, push 완료 |
@@ -90,10 +115,27 @@ Orca 워크스페이스 카드에 한 줄짜리 코멘트와 보드 상태(`todo
 
 **판정은 반드시 파일로 받는다.** TUI에만 뱉으면 스피너 재도색이 스크롤백을 밀어내 판정이 통째로 사라진다.
 
-## 왕복을 혼자 정해서 계속 돌리지 않는다
+## 리뷰 왕복에는 상한이 있다
 
-**blocking이 없어질 때까지 자동으로 돌리지 않는다. 두세 라운드를 넘기면 멈추고, 계속할지 지금 land할지를 사람에게 묻는다.** <br>
-리뷰는 관행이고 최종 게이트는 push 확인이다. 리뷰를 게이트처럼 운용하면 왕복이 계속 이어지고, 그 사이 사람은 무엇을 기다리는지 모른다. 한 배치에서 여섯 라운드를 돌면서 계속할지를 한 번도 묻지 않은 적이 있다.
+`review.sh`가 라운드를 센다. 한 번 돌 때마다 앞 판정을 `~/orca/reviews/<repo>-<name>.round<N>.md`로 밀어 두므로, 재리뷰가 앞 판정을 덮어 무엇이 지적이었는지 사라지던 자리가 막힌다. 라운드 수는 `status.sh`의 리뷰 칸에 `3차`처럼 앉는다.
+
+기본 상한은 5다. 넘기면 `review.sh`가 남은 blocking을 찍고 멈춘다.
+
+```
+리뷰 6차다. 상한 5차를 넘었다.
+
+남은 판정 (~/orca/reviews/shared-orca-plugin.orca-check.trade.md) -- blocking 1건
+## blocking
+- src/Auth.java:88 토큰 만료 검사가 없다
+
+왕복을 더 쓸 값인지 사람이 판단한다.
+  계속 돌린다   FORCE=1 .../bin/review.sh shared ...
+  여기서 닫는다 .../bin/land.sh shared ...
+```
+
+상한을 바꾸려면 `.orca-flow.json`의 `review.maxRounds`, 한 번만 다르게 하려면 `MAX_ROUNDS=3`이다.
+
+**상한에 닿기 전에도 오케스트레이터가 자동으로 계속 돌리지 않는다.** 리뷰는 관행이고 최종 게이트는 push 확인이다. 리뷰를 게이트처럼 운용하면 왕복이 이어지고, 그 사이 사람은 무엇을 기다리는지 모른다. 한 배치에서 여섯 라운드를 돌면서 계속할지를 한 번도 묻지 않은 적이 있다.
 
 물을 때는 남은 것을 종류로 갈라 보여 준다.
 
@@ -102,19 +144,11 @@ Orca 워크스페이스 카드에 한 줄짜리 코멘트와 보드 상태(`todo
 | 실행을 깨는 것 (apply 실패, 계약 위반, 데이터 손상) | 라운드를 더 써서 닫는다 |
 | 서술 정정과 문장 다듬기 | land를 추천하고 잔여를 숙제로 적는다 |
 
-**리뷰어가 죽었으면 재리뷰 전에 앞 판정을 옮겨 둔다.** `status.sh`의 터미널 칸이 `없음`인데 그냥 `review.sh`를 부르면, 새 리뷰어는 무엇이 지적이었는지 모른 채 처음부터 훑고 같은 파일을 덮어쓴다. 재리뷰가 아니라 1차가 한 번 더 도는 것이고 기록도 사라진다.
-
-```bash
-cp ~/orca/reviews/<repo>-<name>.md ~/orca/reviews/<repo>-<name>.round1.md
-```
-
-그리고 재리뷰 프롬프트에 그 경로와 무엇을 우선순위로 되돌렸는지를 함께 적는다. 항목별로 닫혔는지 확인하라는 지시가 없으면 새 리뷰어는 그 파일을 안 읽는다.
-
-**라운드가 셋을 넘으면 억지 지적을 막는다.** 프롬프트에 "새 지적을 억지로 만들지 않는다. 없으면 없다고 적는다"를 넣는다.
+2차부터는 프롬프트에 범위가 박혀 나간다. 앞 라운드 파일 경로를 주면서 거기 blocking이 항목마다 닫혔는지만 보라고 하고, 새로 눈에 띈 것은 blocking으로 올리지 말라고 못 박는다. 라운드가 늘수록 억지 지적이 붙는 것을 막는 자리다. 리뷰어가 죽어 새로 뜨더라도 그 파일을 읽고 시작하므로 1차가 한 번 더 도는 일은 없다.
 
 ## 에이전트가 「쉬는 중」일 때 셋을 가른다
 
-카드 문구로는 일하는 중, 프롬프트에 막힘, 죽음이 구분되지 않는다. 터미널 tail을 읽는다.
+`status.sh`의 터미널 칸이 `1개 · 돎`, `1개 · 막힘`, `1개 · 쉼`, `없음`으로 갈라 준다. `막힘`은 사람 손을 기다리는 것이라 그때는 오케스트레이터가 열어 봐야 한다. 칸이 애매하면 터미널 tail을 직접 읽는다.
 
 | tail에 무엇이 보이나 | 무슨 상태 | 무엇을 하나 |
 |--------------------|----------|-------------|
@@ -136,10 +170,21 @@ git worktree는 추적하는 파일만 가져오는데, 앱을 띄우고 테스�
 
 워크트리는 세션과 무관하게 살아 있고 그 안의 에이전트도 계속 돈다. 죽는 것은 오케스트레이터 대화뿐이다. 리뷰 판정도 워크스페이스 밖(`~/orca/reviews/`)이라 남는다.
 
-그래도 **어떤 판단을 왜 그렇게 내렸는지는 코드에도 커밋에도 안 남는다.** 클리어 전에 그것을 파일로 내려놓는다.
+무엇을 언제 내보내고 몇 차에 닫았는지는 스크립트가 `~/orca/reviews/.journal/<우산레포>.<우산워크트리>.md`에 한 줄씩 쌓는다. 카드는 지금 처지 한 줄만 들고 land가 워크트리를 지우면 그것도 같이 가므로, 끝난 일이 남는 자리는 이 파일뿐이다. `status.sh`가 마지막 다섯 줄을 표 아래에 붙여 준다.
+
+```
+09-10 14:02  dispatch orca-plugin-sub-repo/orca-plugin.orca-check.login-api -- 너는 인증 담당이다
+09-10 15:40  review orca-plugin-sub-repo/orca-plugin.orca-check.login-api 1차 (커밋 3개)
+09-10 16:11  handback orca-plugin-sub-repo/orca-plugin.orca-check.login-api -- blocking 2건
+09-10 17:03  land orca-plugin-sub-repo/orca-plugin.orca-check.login-api -- main 에 머지, push 완료 (커밋 5개, 리뷰 2차)
+```
+
+그래도 **어떤 판단을 왜 그렇게 내렸는지는 거기에도 안 남는다.** 클리어 전에 그것을 파일로 내려놓는다.
 
 1. `status.sh`로 커밋과 리뷰 라운드를 확인한다. 판정이 닫힌 것은 land하고 안 닫힌 것은 그대로 둔다.
 2. 진행 문서에 무엇을 왜 그렇게 했는지, 넘어간 숙제가 무엇인지 적는다.
 3. 아직 안 끝난 워크트리가 있으면 어느 것이 몇 라운드째이고 무엇을 기다리는지 한 줄 남긴다. `status.sh`가 처지는 보여 주지만 왜 그러고 있는지는 안 보여 준다.
+
+컨텍스트가 차서 요약이 걸리기 시작하면 세션을 이어 붙이지 말고 **우산 레포에 워크트리를 새로 따서 거기서 다음 기능을 시작한다.** 이미 떠 있는 서브 워크트리는 그대로 두고, 새 우산 워크트리는 제 접두가 붙은 것만 보게 되므로 남의 것을 겹쳐 만질 일이 없다.
 
 이어갈 때는 `status.sh`부터 본다. 그리고 **메인 체크아웃이 origin보다 낡을 수 있다** — 워크트리는 origin 기준으로 서는데 메인 체크아웃은 그렇지 않아서, 다른 세션이 land한 것이 안 보인다. `git -C <repo> pull --ff-only`를 먼저 돌린다.

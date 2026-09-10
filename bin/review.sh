@@ -14,6 +14,10 @@
 # 리뷰어가 이미 그 워크트리에 살아 있으면 새로 띄우지 않고 그쪽에 재리뷰를
 # 시킨다. 컨텍스트를 들고 있어 지난 발견과 지금 상태를 견줄 수 있다.
 # NEW=1 을 주면 그래도 새로 띄운다.
+#
+# 라운드를 센다. 한 번 돌 때마다 앞 판정을 .roundN.md 로 밀어 두므로 재리뷰가
+# 앞 판정을 덮지 않고, 상한(설정 review.maxRounds, 기본 5)에 닿으면 멈춘다.
+# MAX_ROUNDS 로 한 번만 다르게, FORCE=1 로 상한을 넘겨 돌릴 수 있다.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -37,6 +41,38 @@ AHEAD="$(git -C "$WT" rev-list --count "$BASE_BRANCH..HEAD" 2>/dev/null || echo 
 
 OUT="$(review_file "$REPO" "$NAME")"
 mkdir -p "$ORCA_REVIEWS"
+
+MAX_ROUNDS="${MAX_ROUNDS:-$(cfg_get review.maxRounds 5)}"
+DONE="$(rounds_done "$REPO" "$NAME")"
+ROUND=$((DONE + 1))
+
+if [ "$ROUND" -gt "$MAX_ROUNDS" ] && [ "${FORCE:-}" != "1" ]; then
+  printf '리뷰 %s차다. 상한 %s차를 넘었다.\n' "$ROUND" "$MAX_ROUNDS" >&2
+  if [ -f "$OUT" ]; then
+    printf '\n남은 판정 (%s) -- blocking %s건\n' "$OUT" "$(blocking_count "$OUT")" >&2
+    blocking_section "$OUT" | head -20 >&2
+  fi
+  printf '\n왕복을 더 쓸 값인지 사람이 판단한다.\n' >&2
+  printf '  계속 돌린다   FORCE=1 %s/bin/review.sh %s %s\n' "$PLUGIN_ROOT" "$REPO" "$NAME" >&2
+  printf '  여기서 닫는다 %s/bin/land.sh %s %s\n' "$PLUGIN_ROOT" "$REPO" "$NAME" >&2
+  exit 1
+fi
+
+# 이번 판정이 앞엣것을 덮지 않게 민다. 재리뷰가 무엇이 지적이었는지를 지우던
+# 자리가 여기다 -- 밀어 둔 파일이 곧 라운드 수이기도 하다.
+archive_review "$REPO" "$NAME"
+
+# 셋을 넘으면 억지 지적이 붙기 시작한다. 범위를 프롬프트에서 못 박는다.
+SCOPE=""
+if [ "$ROUND" -ge 2 ]; then
+  SCOPE="
+
+## 이번 라운드의 범위 (리뷰 ${ROUND}차, 상한 ${MAX_ROUNDS})
+
+앞 라운드의 판정은 $(round_file "$REPO" "$NAME" "$DONE") 에 있다. 먼저 읽는다.
+거기 적힌 blocking이 항목마다 실제로 닫혔는지를 본다. 그것이 이번 리뷰의 본론이다.
+새로 눈에 띈 것은 blocking으로 올리지 말고 참고로만 적는다. 없으면 없다고 적는다 -- 억지로 만들지 않는다."
+fi
 
 OUT_RULE="
 
@@ -68,34 +104,38 @@ $CONTEXT"
 리뷰 대상은 지금 이 worktree($REPO, 브랜치 $NAME)이고 범위는 커밋 범위 \`$BASE_BRANCH..HEAD\`다.$CONTEXT
 정확성과 공유 계약 정합, 스펙 정합을 본다. 빌드와 테스트를 실제로 돌려 결과를 함께 적는다."
 fi
+BODY="$BODY$SCOPE"
 
 # 이미 살아 있는 리뷰어가 있으면 그쪽에 재리뷰를 시킨다
 if [ "${NEW:-}" != "1" ] && EXIST="$(load_handle "$REPO" "$NAME" review 2>/dev/null)"; then
   printf '리뷰어가 이미 떠 있다. 재리뷰를 시킨다: %s\n' "$EXIST"
-  send_prompt "$EXIST" "고친 것이 커밋됐다. \`$BASE_BRANCH..HEAD\`를 다시 리뷰한다. 지난번에 낸 blocking이 실제로 닫혔는지 항목마다 확인하고, 고치는 과정에서 새로 생긴 것도 본다.${OUT_RULE}" \
+  send_prompt "$EXIST" "고친 것이 커밋됐다. \`$BASE_BRANCH..HEAD\`를 다시 리뷰한다.${SCOPE}${OUT_RULE}" \
     || die "메시지가 리뷰어에 안 들어갔다. Orca에서 그 탭을 직접 본다."
   # 카드는 메시지가 실제로 들어간 뒤에 찍는다. 위에서 die하면 여기까지 안 온다.
-  card "$WT" in-review "재리뷰 중 (커밋 ${AHEAD}개)"
+  card "$WT" in-review "재리뷰 ${ROUND}차 (커밋 ${AHEAD}개)"
+  journal "review $REPO/$NAME ${ROUND}차 (재리뷰, 커밋 ${AHEAD}개)"
   printf '결과   %s\n' "$OUT"
   exit 0
 fi
 
-printf '리뷰어를 띄운다: %s/%s (커밋 %s개)\n' "$REPO" "$NAME" "$AHEAD"
+printf '리뷰어를 띄운다: %s/%s (%s차, 커밋 %s개)\n' "$REPO" "$NAME" "$ROUND" "$AHEAD"
 TMP="$(mktemp -t orca-review)"
 printf '%s%s\n' "$BODY" "$OUT_RULE" > "$TMP"
 
 H="$(orca terminal create \
   --worktree "path:$WT" \
-  --title "REVIEW $REPO" \
+  --title "REVIEW $(short_name "$NAME")" \
   --command "$AGENT_CMD \"\$(cat '$TMP')\"" \
   --json 2>&1 | terminal_handle)"
 
 if [ -n "$H" ]; then
   save_handle "$REPO" "$NAME" review "$H"
-  card "$WT" in-review "리뷰 중 (커밋 ${AHEAD}개)"
+  card "$WT" in-review "리뷰 ${ROUND}차 (커밋 ${AHEAD}개)"
 else
   card "$WT" in-review "리뷰어가 안 붙었다 -- Orca에서 탭을 본다"
 fi
+
+journal "review $REPO/$NAME ${ROUND}차 (커밋 ${AHEAD}개)"
 
 printf '결과   %s\n' "$OUT"
 printf '되돌림 %s/bin/handback.sh %s %s\n' "$PLUGIN_ROOT" "$REPO" "$NAME"

@@ -35,17 +35,37 @@ git clone git@github.com:gilbertlim/orca-plugin.git ~/orca-plugin
 
 **프로젝트 쪽.** 쓸 프로젝트의 루트에 `.orca-flow.json`을 둔다. `templates/orca-flow.json`을 복사해 고치면 되고, 없어도 기본값으로 돈다.
 
+## 우산 레포에서 시작한다
+
+레포가 여럿인 일은 우산 레포 하나가 들고, 거기서 서브 레포로 몫을 내보낸다. 그때 **우산 레포에도 먼저 워크트리를 딴다.** 오케스트레이터가 메인 체크아웃에 앉아 있으면 진행 문서와 계약 초안이 남의 브랜치와 섞이고, 우산이 둘 이상 도는 순간 어느 서브 워크트리가 누구 몫인지 물어볼 자리가 없다.
+
+우산 워크트리 안에서 `dispatch.sh`를 부르면 만들어지는 이름 앞에 `<우산레포>.<우산워크트리>.` 가 붙는다.
+
+```
+우산:  orca-plugin/orca-check
+서브:  shared/orca-plugin.orca-check.migration-platform-trade
+```
+
+접두는 표시가 아니라 소유 기록이다. `status.sh`가 그것으로 남의 워크트리를 걸러낸다. 별도 인덱스 파일을 안 두는 이유도 여기 있다 — 사람이 Orca UI에서 워크트리를 지우면 인덱스는 곧 실제와 어긋나지만, 이름은 워크트리와 같이 사라진다.
+
+우산 밖에서 불러도 돌아간다. 접두 없이 만들고 경고 한 줄이 나가며, 손으로 지정하려면 `ORCA_OWNER=<repo>.<name>`이다. 레포 하나를 혼자 쓰는 쓰임을 안 깨려고 막지 않았다.
+
+접두는 워크트리 이름에만 붙고 터미널 탭 제목에는 안 붙는다. 탭이 이미 그 워크트리 안에 앉으므로 제목에는 사람이 준 이름(`greet`)만 남는다.
+
+**한 우산 워크트리는 기능 하나만 든다.** 오케스트레이터의 컨텍스트는 서브 레포 수만큼 빨리 차고, 차고 나면 무엇을 왜 그렇게 정했는지가 요약에 눌려 사라진다. 두 번째 기능은 우산 레포에 워크트리를 새로 따서 거기서 시작한다. 이미 떠 있는 서브 워크트리는 그대로 두면 되고, 새 우산은 제 접두가 붙은 것만 보므로 겹쳐 만질 일이 없다.
+
 ## 한 사이클
 
-슬래시 커맨드로 하면 이렇다.
+우산 워크트리 안에서 슬래시 커맨드로 하면 이렇다.
 
 ```
 /orca:dispatch shared migration-platform-trade  플랫폼 거래 컬럼을 판다
+     -> shared/orca-plugin.orca-check.migration-platform-trade
 /orca:status
-/orca:review shared migration-platform-trade
-/orca:handback shared migration-platform-trade      # blocking이 있으면
-/orca:review shared migration-platform-trade        # 재리뷰
-/orca:land shared migration-platform-trade
+/orca:review shared orca-plugin.orca-check.migration-platform-trade
+/orca:handback shared orca-plugin.orca-check.migration-platform-trade   # blocking이 있으면
+/orca:review shared orca-plugin.orca-check.migration-platform-trade     # 재리뷰, 2차로 센다
+/orca:land shared orca-plugin.orca-check.migration-platform-trade
 ```
 
 스크립트를 직접 부르면 이렇다.
@@ -53,13 +73,15 @@ git clone git@github.com:gilbertlim/orca-plugin.git ~/orca-plugin
 ```bash
 bin/dispatch.sh shared migration-platform-trade /tmp/prompt.md
 bin/status.sh
-bin/review.sh shared migration-platform-trade
-bin/handback.sh shared migration-platform-trade
-bin/land.sh shared migration-platform-trade
+bin/review.sh shared orca-plugin.orca-check.migration-platform-trade
+bin/handback.sh shared orca-plugin.orca-check.migration-platform-trade
+bin/land.sh shared orca-plugin.orca-check.migration-platform-trade
 ```
 
+dispatch 뒤로는 `status.sh`가 찍어 준 이름을 그대로 복사해 넘긴다. 이미 접두가 붙은 이름은 다시 안 붙는다.
+
 레포가 넷이면 dispatch를 넷 나란히 부른다. 디렉터리가 겹치지 않아 서로를 안 건드린다. <br>
-handback과 review는 blocking이 없어질 때까지 돈다. 도는 자리는 언제나 그 워크트리 안이고, 오케스트레이터는 판정 파일(`~/orca/reviews/<repo>-<name>.md`)만 읽는다.
+handback과 review는 blocking이 없어질 때까지 돌되 상한이 있다. 도는 자리는 언제나 그 워크트리 안이고, 오케스트레이터는 판정 파일(`~/orca/reviews/<repo>-<name>.md`)만 읽는다.
 
 ## 스크립트
 
@@ -68,11 +90,46 @@ handback과 review는 blocking이 없어질 때까지 돈다. 도는 자리는 �
 | `dispatch.sh <repo> <name> <prompt-file>` | 워크트리를 만들고, gitignore된 파일을 메인 체크아웃에서 채우고, 에이전트를 띄운다 |
 | `review.sh <repo> <name> [prompt-file]` | 그 워크트리 안에 리뷰어를 띄운다. 이미 떠 있으면 새로 안 띄우고 재리뷰를 시킨다 |
 | `handback.sh <repo> <name> [review-file]` | 리뷰 결과를 작업 에이전트에게 되돌려 고치게 한다. 죽었으면 새로 띄운다 |
-| `status.sh [repo]` | 워크트리별 커밋 수, 미커밋 수, 리뷰 상태, 살아 있는 터미널, 카드에 적힌 줄 |
+| `status.sh [repo\|--all]` | 워크트리별 커밋 수, 미커밋 수, 리뷰 라운드, 터미널 처지(돎/막힘/쉼), 카드에 적힌 줄. 우산 워크트리 안이면 제 것만 |
 | `land.sh <repo> <name>` | 리뷰 판정을 찍어 보이고 `--no-ff`로 머지, push까지 한 뒤 워크트리를 지운다 |
 | `worktree-setup.sh [path]` | 새 워크트리에 gitignore된 파일을 메인 체크아웃에서 채운다. dispatch가 자동으로 부른다 |
 
-손잡이가 환경변수로 열려 있다. `AGENT_CMD`, `BASE_BRANCH`, `NO_SETUP=1`, `KEEP=1`, `NO_PUSH=1`, `FORCE=1`, `NOTE`(handback에 실을 메모), `NEW=1`(리뷰어를 새로 띄운다)이다.
+손잡이가 환경변수로 열려 있다. `AGENT_CMD`, `BASE_BRANCH`, `NO_SETUP=1`, `KEEP=1`, `NO_PUSH=1`, `FORCE=1`, `NOTE`(handback에 실을 메모), `NEW=1`(리뷰어를 새로 띄운다), `MAX_ROUNDS`(리뷰 상한), `ORCA_OWNER`(우산을 손으로 지정한다)이다.
+
+## 리뷰 왕복에는 상한이 있다
+
+`review.sh`가 라운드를 센다. 한 번 돌 때마다 앞 판정을 `~/orca/reviews/<repo>-<name>.round<N>.md`로 밀어 두므로, 재리뷰가 앞 판정을 덮어 무엇이 지적이었는지 사라지던 자리가 막힌다. 밀어 둔 파일 수가 곧 라운드 수이고, `status.sh`의 리뷰 칸에 `3차`로 앉는다.
+
+기본 상한은 5다. 넘기면 스크립트가 남은 blocking을 찍고 멈춘다.
+
+```
+리뷰 6차다. 상한 5차를 넘었다.
+
+남은 판정 (~/orca/reviews/shared-orca-plugin.orca-check.trade.md) -- blocking 1건
+## blocking
+- src/Auth.java:88 토큰 만료 검사가 없다
+
+왕복을 더 쓸 값인지 사람이 판단한다.
+  계속 돌린다   FORCE=1 .../bin/review.sh shared ...
+  여기서 닫는다 .../bin/land.sh shared ...
+```
+
+2차부터는 프롬프트에 범위가 박혀 나간다. 앞 라운드 파일을 읽고 거기 blocking이 항목마다 닫혔는지만 보라고 하며, 새로 눈에 띈 것은 blocking으로 올리지 말라고 못 박는다. 라운드가 늘수록 억지 지적이 붙던 것을 막는 자리다.
+
+## 무엇을 했는지는 기록 파일에 쌓인다
+
+카드는 지금 처지 한 줄만 든다. 앞 줄은 덮여 사라지고, land가 워크트리를 지우면 카드도 같이 간다. 그래서 dispatch, review, handback, land가 우산마다 파일 하나에 한 줄씩 남긴다.
+
+```
+~/orca/reviews/.journal/orca-plugin.orca-check.md
+
+09-10 14:02  dispatch shared/orca-plugin.orca-check.trade -- 너는 거래 컬럼 담당이다
+09-10 15:40  review shared/orca-plugin.orca-check.trade 1차 (커밋 3개)
+09-10 16:11  handback shared/orca-plugin.orca-check.trade -- blocking 2건
+09-10 17:03  land shared/orca-plugin.orca-check.trade -- main 에 머지, push 완료 (커밋 5개, 리뷰 2차)
+```
+
+`status.sh`가 표 아래에 마지막 다섯 줄을 붙인다. 세션을 갈아탔으면 그 줄부터 읽는다.
 
 ## 설정
 
@@ -97,7 +154,8 @@ handback과 review는 blocking이 없어질 때까지 돈다. 도는 자리는 �
   },
 
   "review": {
-    "context": "계약 정본은 ${projectRoot}/repos/architecture/specs/ 아래에 있다."
+    "context": "계약 정본은 ${projectRoot}/repos/architecture/specs/ 아래에 있다.",
+    "maxRounds": 5
   },
 
   "promptTemplate": "orca/prompt-template.md"
@@ -118,6 +176,7 @@ handback과 review는 blocking이 없어질 때까지 돈다. 도는 자리는 �
 | `setup.repoExtras` | 없음 | 패턴으로 안 잡히는 레포별 예외. 키는 레포 디렉터리 이름 |
 | `setup.deny` | 없음 | 워크트리로 가르면 안 되는 레포 |
 | `review.context` | 없음 | 기본 리뷰 프롬프트에 얹을 것. 여러 줄이어도 되고, 리뷰 기준을 적은 파일의 절대 경로를 여기서 가리켜도 된다 |
+| `review.maxRounds` | `5` | 리뷰 왕복 상한. 넘으면 `review.sh`가 남은 blocking을 찍고 멈춘다. `MAX_ROUNDS=`로 한 번만 다르게, `FORCE=1`로 넘겨 돌린다 |
 | `promptTemplate` | 플러그인의 `templates/prompt-template.md` | dispatch 프롬프트의 뼈대 |
 
 **설정을 어떻게 찾나.** 기준점에서 위로 올라가며 `.orca-flow.json`을 찾는다. 사람이 부르면 `$PWD`에서, 워크트리 셋업에서는 그 워크트리의 **메인 체크아웃**에서 올라간다. <br>
@@ -183,31 +242,24 @@ Orca 워크스페이스 카드에 한 줄짜리 코멘트와 보드 상태(`todo
 `handback.sh`가 판정 파일 경로를 그 워크트리의 작업 에이전트에게 보낸다. 그 에이전트는 자기가 쓴 코드의 맥락을 아직 들고 있어서, 새로 띄우는 것보다 싸고 정확하다. <br>
 되돌리는 메시지에 "리뷰어가 틀렸다고 판단되면 고치지 말고 근거를 대라"가 들어간다. 지적을 받았다는 이유만으로 코드를 바꾸면 리뷰가 품질을 낮춘다.
 
-작업 에이전트를 다시 찾는 데 탭 제목을 쓰지 않는다. 에이전트가 제목을 자기 작업 요약으로 갈아 버려서(`REVIEW api-gateway`가 `리뷰: API 게이트웨이 거래 경로 변경`이 된다) 제목으로는 역할을 구분하지 못한다. <br>
+작업 에이전트를 다시 찾는 데 탭 제목을 쓰지 않는다. 에이전트가 제목을 자기 작업 요약으로 갈아 버려서(`REVIEW caller-identity`가 `리뷰: API 게이트웨이 거래 경로 변경`이 된다) 제목으로는 역할을 구분하지 못한다. <br>
 그래서 `dispatch.sh`와 `review.sh`가 터미널 핸들을 `<reviews>/.handles/`에 적어 두고 `handback.sh`가 그것을 읽는다.
 
-### 리뷰어가 죽었으면 앞 판정을 먼저 보존한다
+### 리뷰어가 죽으면 앞 판정이 사라지던 자리
 
 handback을 받은 작업 에이전트가 고치고 커밋한 뒤 종료하면 그 워크트리의 터미널이 함께 사라진다. 리뷰어도 같이 죽는다. <br>
-그 상태로 `review.sh`를 부르면 새 리뷰어가 뜨는데, 그 리뷰어는 무엇이 지적이었는지 모른 채 처음부터 훑는다. **닫혔는지를 견주지 못하니 재리뷰가 아니라 1차가 한 번 더 도는 것이다.** <br>
-게다가 `review.sh`가 지시하는 출력 경로가 앞 판정과 같은 파일이라, 새 리뷰어가 그것을 덮어쓰면 무엇을 되돌렸는지의 기록이 사라진다.
+그 상태로 `review.sh`를 부르면 새 리뷰어가 뜨는데, 그 리뷰어는 무엇이 지적이었는지 모른 채 처음부터 훑는다. **닫혔는지를 견주지 못하니 재리뷰가 아니라 1차가 한 번 더 도는 것이다.** 게다가 출력 경로가 앞 판정과 같은 파일이라, 덮어쓰면 무엇을 되돌렸는지의 기록도 사라진다.
 
-`status.sh`의 터미널 칸이 `없음`이면 재리뷰 전에 판정을 옮겨 둔다.
+한동안은 재리뷰 전에 사람이 `cp`로 옮겨 두게 했다. 지금은 `review.sh`가 뜨기 전에 앞 판정을 `.round<N>.md`로 밀고, 2차부터는 그 경로를 프롬프트에 실어 항목마다 닫혔는지 확인하라고 지시한다. 리뷰어가 살아 있든 죽었든 같은 문장이 나가므로 갈래가 하나다.
 
-```bash
-cp ~/orca/reviews/shared-seed-reset-fk.md ~/orca/reviews/shared-seed-reset-fk.round1.md
-```
-
-그리고 재리뷰 프롬프트에 **그 경로와 무엇을 우선순위로 되돌렸는지를 함께 적는다.** 항목별로 닫혔는지 확인하라는 지시가 없으면 새 리뷰어는 그 파일을 안 읽는다. <br>
-라운드가 늘면 `.round1.md`부터 차례로 쌓이는데 그대로 두는 편이 낫다. "이건 왜 이렇게 됐나"를 나중에 물을 때 라운드별 판정이 유일한 기록이다.
-
-**이걸 `review.sh`가 자동으로 안 하는 것은 아직 정하지 않아서다.** 재료는 스크립트 안에 다 있다 — `review_file`이 경로를 계산하고 `load_handle`이 살아 있는 리뷰어만 돌려주므로 죽었는지도 그 자리에서 갈린다. <br>
-자동으로 돌리면 라운드를 안 세는 이름(타임스탬프)이 되거나 스크립트가 라운드 번호를 따로 들어야 하고, 어느 쪽이든 파일이 조용히 늘어난다. 그래서 지금은 사람이 부른다.
+라운드별 판정은 워크트리를 지워도 그대로 둔다. "이건 왜 이렇게 됐나"를 나중에 물을 때 그것이 유일한 기록이다.
 
 ### 라운드가 늘면 억지 지적을 막는다
 
 라운드가 셋을 넘어가면 남는 것이 대개 문장 다듬기다. 그때도 리뷰어는 뭔가를 내려 한다. <br>
-프롬프트에 범위를 좁히고 "새 지적을 억지로 만들지 않는다. 없으면 없다고 적는다"를 넣는다. 네 라운드를 돈 워크트리에서 그 문장을 넣은 4라운드부터 판정이 짧아졌다.
+2차부터 프롬프트에 범위가 좁혀져 나가고 "새 지적을 억지로 만들지 않는다. 없으면 없다고 적는다"가 함께 실린다. 네 라운드를 돈 워크트리에서 그 문장을 넣은 4라운드부터 판정이 짧아졌다.
+
+그리고 5차가 상한이다. 넘으면 `review.sh`가 남은 blocking을 찍고 멈춘다.
 
 ### 왕복을 어디서 멈출지는 오케스트레이터가 혼자 정하지 않는다
 
@@ -237,7 +289,7 @@ API 계약을 사이에 둔 양쪽, 공유 마이그레이션과 그것을 읽�
 ## 알아 둘 것
 
 **카드의 「쉬는 중」으로는 셋이 구분되지 않는다.** 일하는 중, 프롬프트에 막힘, 죽음이 같은 문구로 보인다. <br>
-갈라 보려면 `status.sh`가 아니라 터미널 tail을 읽는다.
+`status.sh`의 터미널 칸이 그것을 `돎`, `막힘`, `쉼`, `없음`으로 가른다. 도는 중인지는 `orca terminal list`가 주는 preview(TUI 마지막 줄)로 추가 호출 없이 갈리고, 쉬는 것으로 보일 때만 tail을 읽어 사람 손을 기다리는 프롬프트가 떠 있는지 본다. 칸이 애매하면 직접 읽는다.
 
 ```bash
 source bin/lib.sh

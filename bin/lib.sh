@@ -244,3 +244,143 @@ print(r.get("handle")
       or "")
 '
 }
+
+# ---------------------------------------------------------------------------
+# 우산 워크트리
+# ---------------------------------------------------------------------------
+#
+# 우산 레포에서 서브 레포로 일을 내보내는 쓰임에서, 서브 레포의 워크트리가
+# 누구 것인지가 이름 말고는 어디에도 안 남는다. 레포 하나에 우산 여럿이 붙으면
+# status가 남의 것까지 찍고 land도 남의 것을 겨눈다.
+#
+# 그래서 소유자를 이름에 박는다. 따로 인덱스 파일을 두지 않는 것은, 워크트리를
+# 사람이 Orca UI에서 지울 수 있어서다 -- 인덱스는 곧 실제와 어긋나는데 이름은 안 그렇다.
+
+# 이 셸이 어느 우산 워크트리 안에서 도는지. "<repo>.<worktree>" 또는 빈 문자열.
+# $PWD 로 판단한다. 워크스페이스 아래가 아니면(메인 체크아웃, 홈) 우산이 없는 것이다.
+owner_id() {
+  if [ -n "${ORCA_OWNER:-}" ]; then printf '%s' "$ORCA_OWNER"; return 0; fi
+  local rest repo name
+  rest="${PWD#"$ORCA_WORKSPACES"/}"
+  [ "$rest" != "$PWD" ] || return 0
+  case "$rest" in */*) ;; *) return 0 ;; esac
+  repo="${rest%%/*}"
+  name="${rest#*/}"; name="${name%%/*}"
+  [ -n "$repo" ] && [ -n "$name" ] || return 0
+  printf '%s.%s' "$repo" "$name"
+}
+
+# 소유자 접두를 붙인다. 이미 붙어 있으면 그대로 둔다 -- status가 찍어 준 이름을
+# 사람이 그대로 복사해 review나 land에 넘기는 것이 정상 경로라서다.
+prefixed_name() { # owner name
+  case "$2" in
+    "$1".*) printf '%s' "$2" ;;
+    *) printf '%s.%s' "$1" "$2" ;;
+  esac
+}
+
+# 접두를 뗀 이름. 터미널 제목처럼 워크트리가 이미 맥락을 들고 있는 자리에 쓴다.
+# 우산이 안 잡히면 이름을 그대로 돌려준다.
+short_name() { # name
+  local owner
+  owner="$(owner_id)"
+  [ -n "$owner" ] || { printf '%s' "$1"; return 0; }
+  case "$1" in
+    "$owner".*) printf '%s' "${1#"$owner".}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# 진척 기록
+# ---------------------------------------------------------------------------
+#
+# 카드는 지금 처지 한 줄만 든다. 앞의 줄은 덮여 사라지고, land가 워크트리를
+# 지우면 카드도 같이 간다. 무엇을 했는지가 그래서 아무 데도 안 남는다.
+# 우산마다 파일 하나에 append 한다. 컨텍스트가 차 세션을 갈아탈 때 이걸 읽는다.
+journal_file() { # [owner]  -- 우산이 없으면 _solo 로 모은다
+  local owner="${1:-$(owner_id)}"
+  printf '%s/.journal/%s.md' "$ORCA_REVIEWS" "${owner:-_solo}"
+}
+
+journal() { # line...
+  local f
+  f="$(journal_file)"
+  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  printf '%s  %s\n' "$(date '+%m-%d %H:%M')" "$*" >> "$f" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# 리뷰 라운드
+# ---------------------------------------------------------------------------
+#
+# 리뷰가 몇 번째인지를 파일 이름으로 센다. 한 번 돌 때마다 앞 판정을
+# .roundN.md 로 밀어 두므로, 재리뷰가 앞 판정을 덮어 무엇이 지적이었는지
+# 사라지던 것이 같이 막힌다.
+round_file() { printf '%s/%s-%s.round%s.md' "$ORCA_REVIEWS" "$1" "$2" "$3"; }
+
+# 지금까지 끝난 라운드 수. 밀어 둔 것 + 아직 안 민 현재 판정.
+rounds_done() { # repo name
+  local n=0
+  while [ -f "$(round_file "$1" "$2" "$((n + 1))")" ]; do n=$((n + 1)); done
+  [ -f "$(review_file "$1" "$2")" ] && n=$((n + 1))
+  printf '%s' "$n"
+}
+
+# 현재 판정을 .roundN.md 로 민다. 없으면 아무것도 안 한다.
+archive_review() { # repo name
+  local out n=0
+  out="$(review_file "$1" "$2")"
+  [ -f "$out" ] || return 0
+  while [ -f "$(round_file "$1" "$2" "$((n + 1))")" ]; do n=$((n + 1)); done
+  mv "$out" "$(round_file "$1" "$2" "$((n + 1))")"
+}
+
+# 터미널 하나가 지금 어느 처지인가. 돎 / 막힘 / 쉼.
+#
+# terminal list 가 주는 preview(TUI 마지막 줄)로 먼저 가른다. 도는 중이면
+# 거기 스피너와 토큰 속도가 앉아 있어서 추가 호출이 필요 없다.
+# 쉬는 것으로 보일 때만 tail 을 읽는다 -- 프롬프트에 막힌 것과 정말 쉬는 것이
+# 마지막 줄로는 안 갈리는데, 그 둘을 뭉치면 승인 하나를 몇 시간 기다린다.
+terminal_state() { # handle preview
+  if printf '%s' "$2" | grep -qE '…|esc to interrupt|tok/s|◐|◑|◒|◓'; then
+    printf '돎'
+    return 0
+  fi
+  orca terminal read --terminal "$1" --limit 60 --json 2>/dev/null | python3 -c '
+import sys, json, re
+try:
+    t = json.load(sys.stdin)["result"]["terminal"]
+except Exception:
+    print("쉼"); sys.exit(0)
+body = "\n".join(re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", l) for l in t.get("tail", []))
+if re.search(r"…|esc to interrupt|tok/s", body):
+    print("돎")
+# 사람 손을 기다리는 자리들. 신뢰 확인, 도구 승인, y/n.
+elif re.search(r"Do you (want|trust)|one you trust|❯\s*1\.|\(y/n\)|Press Enter to continue", body, re.I):
+    print("막힘")
+else:
+    print("쉼")
+'
+}
+
+# ---------------------------------------------------------------------------
+# 판정 파일 읽기
+# ---------------------------------------------------------------------------
+#
+# "## blocking" 절만 떼어 낸다. 다음 같은 수준 제목에서 끊는 것이 핵심이다 --
+# 안 끊으면 뒤에 오는 non-blocking 절까지 통째로 딸려 나온다.
+# non-blocking 은 제목이 "blocking" 으로 시작하지 않아 여는 조건에 안 걸린다.
+blocking_section() { # review-file
+  awk '
+    tolower($0) ~ /^#+[ \t]*blocking/ { p = 1; print; next }
+    p && /^##[^#]/ { exit }
+    p { print }
+  ' "$1"
+}
+
+# 그 절에 든 항목 수. 제목 줄을 세면 판정이 "없다"여도 1건이 되고, 카드와
+# 기록에 없는 blocking 이 앉는다. 목록 표시와 하위 제목만 센다.
+blocking_count() { # review-file
+  blocking_section "$1" | awk '/^[-*+] |^[0-9]+\. |^#{3,} / { n++ } END { print n + 0 }'
+}

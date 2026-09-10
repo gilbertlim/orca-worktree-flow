@@ -10,17 +10,34 @@
 #   AGENT_CMD    기본은 설정의 agentCmd, 없으면 "claude --permission-mode auto"
 #   BASE_BRANCH  기본은 설정의 baseBranch, 없으면 main
 #   NO_SETUP=1   셋업 스크립트를 건너뛴다
+#   ORCA_OWNER   우산을 손으로 지정한다. 기본은 $PWD 에서 알아낸다
+#
+# 우산 워크트리 안에서 부르면 만들어지는 이름 앞에 "<우산레포>.<우산워크트리>." 가
+# 붙는다. 서브 레포 하나를 우산 여럿이 겨눌 때 어느 것이 누구 몫인지 이름만 보고
+# 갈리게 하려는 것이고, status 가 남의 것을 안 찍는 근거도 이 접두다.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 [ $# -ge 3 ] || die "사용법: dispatch.sh <repo> <worktree-name> <prompt-file>"
 
 REPO="$1"; NAME="$2"; PROMPT_FILE="$3"
+# 접두가 붙기 전 이름. 터미널 제목은 이것으로 단다 -- 탭이 이미 그 워크트리
+# 안에 앉으므로 레포도 우산도 제목에서는 중복이다.
+TITLE="$2"
 
 [ -f "$PROMPT_FILE" ] || die "프롬프트 파일이 없다: $PROMPT_FILE"
 [ -s "$PROMPT_FILE" ] || die "프롬프트 파일이 비었다: $PROMPT_FILE"
 
 resolve_repo "$REPO" >/dev/null
+
+OWNER="$(owner_id)"
+if [ -n "$OWNER" ]; then
+  NAME="$(prefixed_name "$OWNER" "$NAME")"
+else
+  printf '주의: 우산 워크트리 밖에서 부른다. 접두 없이 만든다.\n' >&2
+  printf '      우산 레포에 워크트리를 먼저 따고 거기서 부르는 것이 기본이다.\n' >&2
+fi
+
 WT="$(worktree_path "$REPO" "$NAME")"
 
 [ -d "$WT" ] && die "이미 있는 워크트리다: $WT
@@ -79,7 +96,7 @@ TMP="$(mktemp -t orca-dispatch)"
 
 H="$(orca terminal create \
   --worktree "path:$WT" \
-  --title "$REPO/$NAME" \
+  --title "$TITLE" \
   --command "$AGENT_CMD \"\$(cat '$TMP')\"" \
   --json 2>&1 | terminal_handle)"
 
@@ -100,7 +117,13 @@ else
   card "$WT" in-progress "에이전트가 안 붙었다 -- Orca에서 탭을 본다$NOTE"
 fi
 
+journal "dispatch $REPO/$NAME -- $(head -1 "$PROMPT_FILE" | cut -c1-80)"
+
 printf '\n경로   %s\n' "$WT"
-printf '브랜치 %s\n' "$NAME"
+# Orca가 브랜치에 git 사용자명을 앞에 붙이는 일이 있어(gilbertim/<이름>) 워크트리
+# 이름과 안 맞는다. 짐작하지 않고 워크트리에 직접 묻는다.
+printf '브랜치 %s\n' "$(git -C "$WT" branch --show-current 2>/dev/null || printf '%s' "$NAME")"
 printf '진행   %s/bin/status.sh\n' "$PLUGIN_ROOT"
 printf '리뷰   %s/bin/review.sh %s %s\n' "$PLUGIN_ROOT" "$REPO" "$NAME"
+# set -e 아래라 마지막 줄이 참이 아니면 종료 코드가 1로 나간다. || true 가 그것을 막는다.
+[ -n "$OWNER" ] && printf '우산   %s (기록: %s)\n' "$OWNER" "$(journal_file)" || true

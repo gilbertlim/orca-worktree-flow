@@ -38,9 +38,9 @@ if [ ! -f "$RF" ]; then
   printf '%s/bin/review.sh %s %s 로 먼저 리뷰한다. 건너뛰려면 FORCE=1 을 준다.\n' "$PLUGIN_ROOT" "$REPO" "$NAME" >&2
   [ "${FORCE:-}" = "1" ] || exit 1
 else
-  printf '\n리뷰 판정 (%s)\n' "$RF"
-  # blocking 절만 뽑는다. 앞의 -- 를 printf 형식으로 두면 옵션으로 먹힌다.
-  awk 'tolower($0) ~ /^#+ *blocking/ {p=1} p' "$RF" | head -20
+  printf '\n리뷰 판정 (%s) -- blocking %s건\n' "$RF" "$(blocking_count "$RF")"
+  # 앞의 -- 를 printf 형식으로 두면 옵션으로 먹힌다.
+  blocking_section "$RF" | head -20
   printf '%s\n\n' "위 판정이 닫힌 것이 맞는지 보고 진행한다"
 fi
 
@@ -72,6 +72,7 @@ if [ "$PUSHED" = 0 ]; then
   # 머지는 됐는데 push만 안 된 상태다. 카드가 이걸 들고 있어야 한다 --
   # 안 그러면 리뷰 중으로 보이고, 실제로는 손볼 것이 남지 않은 워크트리가 방치된다.
   card "$WT" "" "머지됨, push 실패 -- 손으로 올린다"
+  journal "land $REPO/$NAME -- $BASE_BRANCH 에 머지, push 실패"
   printf 'push가 안 됐다. 워크트리를 남긴다 -- 지우면 되돌릴 자리가 사라진다.\n' >&2
   # land를 다시 부르라고 하지 않는다. 머지는 이미 됐으니 다음 호출은
   # "머지할 것이 없다"에서 멈춘다. 남은 것은 push와 뒷정리 둘뿐이다.
@@ -85,8 +86,11 @@ fi
 # 로컬 기준 브랜치 하나뿐이라, 되돌릴 일이 생겼을 때 골라낼 것이 없다.
 if [ "$PUSHED" = skip ]; then
   card "$WT" "" "머지됨, push 건너뜀 -- 로컬 $BASE_BRANCH 에만"
+  journal "land $REPO/$NAME -- 로컬 $BASE_BRANCH 에 머지 (커밋 ${AHEAD}개, push 건너뜀)"
 else
   card "$WT" completed "$BASE_BRANCH 에 머지, push 완료"
+  # 워크트리와 카드는 아래에서 지워진다. 무엇이 닫혔는지는 이 줄로만 남는다.
+  journal "land $REPO/$NAME -- $BASE_BRANCH 에 머지, push 완료 (커밋 ${AHEAD}개, 리뷰 $(rounds_done "$REPO" "$NAME")차)"
 fi
 
 if [ "${KEEP:-}" = "1" ] || [ "$PUSHED" = skip ]; then

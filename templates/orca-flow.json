@@ -10,6 +10,11 @@
   "baseBranch": "main",
   "agentCmd": "claude --permission-mode auto",
 
+  "review": {
+    "$comment": "리뷰 왕복 상한. 넘으면 review.sh 가 남은 blocking 을 찍고 멈춘다.",
+    "maxRounds": 5
+  },
+
   "setup": {
     "$comment": "새 워크트리에 메인 체크아웃에서 채워 넣을 것. gitignore돼 있지만 없으면 빌드가 안 되는 것들이다.",
     "files": ["*-local-mine.yaml", ".env", ".env.local", ".env.local-mine", ".env.*.local"],
