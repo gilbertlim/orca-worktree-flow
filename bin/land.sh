@@ -93,6 +93,16 @@ else
   journal "land $REPO/$NAME -- $BASE_BRANCH 에 머지, push 완료 (커밋 ${AHEAD}개, 리뷰 $(rounds_done "$REPO" "$NAME")차)"
 fi
 
+# 제가 서 있는 바닥은 안 지운다. 우산 워크트리가 제 일을 land할 때 실제로 나는
+# 일이고, 지우면 부른 셸의 cwd가 통째로 사라진다.
+SELF=0
+case "$PWD/" in "$WT"/*) SELF=1 ;; esac
+if [ "$SELF" = 1 ] && [ "${KEEP:-}" != "1" ] && [ "$PUSHED" != skip ]; then
+  printf '이 워크트리 안에서 부르고 있다. 지우지 않고 남긴다.\n'
+  printf '지우려면 밖에서 부른다: orca worktree rm --worktree "path:%s" --force\n' "$WT"
+  KEEP=1
+fi
+
 if [ "${KEEP:-}" = "1" ] || [ "$PUSHED" = skip ]; then
   printf '워크트리를 남긴다: %s\n' "$WT"
   if [ "$PUSHED" = skip ]; then
