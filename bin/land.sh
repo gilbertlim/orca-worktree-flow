@@ -25,15 +25,28 @@ DIRTY="$(git -C "$WT" status --porcelain)"
 [ -z "$DIRTY" ] || die "워크트리에 미커밋 변경이 남아 있다. 커밋하거나 버린 뒤 다시 부른다.
 $DIRTY"
 
+# 머지가 이미 끝난 워크트리도 여기로 온다. push가 한 번 실패했거나, 사람이
+# 손으로 머지했거나, KEEP=1 로 남겨 둔 것을 나중에 치우는 자리다. 그때
+# "머지할 것이 없다"로 죽으면 뒷정리를 할 마디가 아예 없다.
 AHEAD="$(git -C "$WT" rev-list --count "$BASE_BRANCH..$BRANCH")"
-[ "$AHEAD" -gt 0 ] || die "$BASE_BRANCH 대비 커밋이 없다. 머지할 것이 없다."
-
-printf '%s 의 %s 를 %s 에 머지한다 (커밋 %s개)\n' "$REPO" "$BRANCH" "$BASE_BRANCH" "$AHEAD"
-git -C "$WT" log --oneline "$BASE_BRANCH..$BRANCH"
+MERGED=0
+if [ "$AHEAD" = 0 ]; then
+  git -C "$WT" merge-base --is-ancestor "$BRANCH" "$BASE_BRANCH" 2>/dev/null \
+    || die "$BASE_BRANCH 대비 커밋이 없다. 머지할 것이 없다."
+  MERGED=1
+  printf '%s 는 이미 %s 에 들어가 있다. 머지를 건너뛰고 push와 뒷정리만 한다.\n' \
+    "$BRANCH" "$BASE_BRANCH"
+else
+  printf '%s 의 %s 를 %s 에 머지한다 (커밋 %s개)\n' "$REPO" "$BRANCH" "$BASE_BRANCH" "$AHEAD"
+  git -C "$WT" log --oneline "$BASE_BRANCH..$BRANCH"
+fi
 
 # 리뷰를 안 거친 것이 조용히 기준 브랜치에 들어가지 않게 한다.
+# 이미 들어간 뒤라면 막을 것이 없다 -- 그 판단은 지났고 남은 것은 뒷정리다.
 RF="$(review_file "$REPO" "$NAME")"
-if [ ! -f "$RF" ]; then
+if [ "$MERGED" = 1 ]; then
+  :
+elif [ ! -f "$RF" ]; then
   printf '\n리뷰 결과 파일이 없다: %s\n' "$RF" >&2
   printf '%s/bin/review.sh %s %s 로 먼저 리뷰한다. 건너뛰려면 FORCE=1 을 준다.\n' "$PLUGIN_ROOT" "$REPO" "$NAME" >&2
   [ "${FORCE:-}" = "1" ] || exit 1
@@ -56,7 +69,7 @@ if [ -n "$OTHER" ]; then
   [ "${FORCE:-}" = "1" ] || exit 1
 fi
 
-git -C "$MAIN" merge --no-ff "$BRANCH" -m "merge: $BRANCH 를 받는다"
+[ "$MERGED" = 1 ] || git -C "$MAIN" merge --no-ff "$BRANCH" -m "merge: $BRANCH 를 받는다"
 
 # 일부러 건너뛴 것과 하려다 실패한 것을 가른다. 둘을 0 하나로 뭉치면
 # NO_PUSH=1 이 실패 경로로 떨어져 "push가 안 됐다"를 찍고 1로 빠진다.
@@ -90,7 +103,11 @@ if [ "$PUSHED" = skip ]; then
 else
   card "$WT" completed "$BASE_BRANCH 에 머지, push 완료"
   # 워크트리와 카드는 아래에서 지워진다. 무엇이 닫혔는지는 이 줄로만 남는다.
-  journal "land $REPO/$NAME -- $BASE_BRANCH 에 머지, push 완료 (커밋 ${AHEAD}개, 리뷰 $(rounds_done "$REPO" "$NAME")차)"
+  if [ "$MERGED" = 1 ]; then
+    journal "land $REPO/$NAME -- 이미 머지돼 있어 뒷정리만 (리뷰 $(rounds_done "$REPO" "$NAME")차)"
+  else
+    journal "land $REPO/$NAME -- $BASE_BRANCH 에 머지, push 완료 (커밋 ${AHEAD}개, 리뷰 $(rounds_done "$REPO" "$NAME")차)"
+  fi
 fi
 
 # 제가 서 있는 바닥은 안 지운다. 우산 워크트리가 제 일을 land할 때 실제로 나는
