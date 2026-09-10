@@ -14,6 +14,9 @@
 # 통째로 무너지고 배너는 두어 줄에서 잘리므로, 거기엔 표가 아니라 수를 싣는다.
 # 플러그인은 앱 프로세스에서 부르므로 우산이 없고, 그래서 늘 전부를 센다.
 
+# lib.sh 가 설정 파일 값으로 덮기 전에, 사람이 env 로 준 것인지를 잡아 둔다.
+BASE_BRANCH_ENV="${BASE_BRANCH:-}"
+
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SUMMARY=0
@@ -66,6 +69,7 @@ n_closed=0
 # 실제로 그래서 사람이 세 번을 먼저 밀었다.
 self_ahead=0
 self_dirty=0
+self_base=""
 
 n_total=0
 n_stale=0
@@ -73,6 +77,41 @@ n_unreviewed=0
 n_dirty=0
 n_idle=0
 n_blocked=0
+
+# 표에 뜨는 워크트리는 여러 레포의 것인데, lib.sh 는 $PWD 한 자리에서 기준
+# 브랜치를 한 번 정한다. 그것을 전부에 대면 기준이 main 이 아닌 레포(master,
+# develop)는 커밋 칸이 통째로 '?' 가 되고 아래 커밋 목록도 빈다.
+# 레포마다 제 메인 체크아웃에서 .orca-flow.json 을 찾아 읽는다. 경로는 여기서
+# 한 번에 들고 온다 -- 레포마다 repo_path 를 부르면 orca repo list 를 그 수만큼 친다.
+REPO_PATHS="$(orca repo list --json 2>/dev/null | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for r in d.get("result", {}).get("repos", []):
+    print("%s\t%s" % (r.get("displayName") or "", r.get("path") or ""))
+' || true)"
+
+# 한 번 읽은 것은 여기 쌓는다. bash 3.2 에는 연관 배열이 없어서 줄로 든다.
+BASE_CACHE=""
+
+base_branch_for() { # repo -- 그 레포의 기준 브랜치
+  # env 로 명시한 것은 그대로 이긴다. 한 번만 다른 기준으로 볼 때 쓰는 자리다.
+  [ -z "$BASE_BRANCH_ENV" ] || { printf '%s' "$BASE_BRANCH_ENV"; return 0; }
+  local repo="$1" path b
+  b="$(printf '%s\n' "$BASE_CACHE" | awk -F'\t' -v n="$repo" '$1==n {print $2; exit}')"
+  if [ -z "$b" ]; then
+    path="$(printf '%s\n' "$REPO_PATHS" | awk -F'\t' -v n="$repo" '$1==n {print $2; exit}')"
+    # 서브셸로 부르는 것은 orca_flow_load 가 PROJECT_ROOT 를 덮어서다.
+    if [ -n "$path" ]; then
+      b="$( (orca_flow_load "$path"; cfg_get baseBranch "$BASE_BRANCH") )" || b=""
+    fi
+    b="${b:-$BASE_BRANCH}"
+    BASE_CACHE="$(printf '%s\n%s\t%s' "$BASE_CACHE" "$repo" "$b")"
+  fi
+  printf '%s' "$b"
+}
 
 # preview 는 TUI 마지막 줄이다. 도는 중인지를 추가 호출 없이 여기서 가른다.
 TERMS="$(orca terminal list --json 2>/dev/null | python3 -c '
@@ -124,7 +163,13 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   mine "$repo" "$name" || continue
   found=1
 
-  ahead="$(git -C "$dir" rev-list --count "$BASE_BRANCH..HEAD" 2>/dev/null || echo '?')"
+  # 기준 브랜치가 이 워크트리에 없으면 origin 쪽을 본다. 갓 딴 워크트리는 로컬
+  # 브랜치를 안 들고 있는 때가 있다. 둘 다 없으면 '?' 로 둔다 -- 0 은 "커밋이
+  # 없다"라 land 를 안 묻는 값이고, 못 센 것을 0 으로 적으면 그 둘이 같아진다.
+  base="$(base_branch_for "$repo")"
+  ahead="$(git -C "$dir" rev-list --count "$base..HEAD" 2>/dev/null \
+           || git -C "$dir" rev-list --count "origin/$base..HEAD" 2>/dev/null \
+           || echo '?')"
   dirty="$(git -C "$dir" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 
   # 터미널은 개수만으로는 못 읽는다. 도는 중과 승인을 기다리는 중이 같은 "1개"다.
@@ -163,6 +208,7 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   case "$repo.$name" in
     "$OWNER")
       self_ahead="${ahead:-0}"
+      self_base="$base"
       self_dirty="${dirty:-0}"
       ;;
     *)
@@ -209,7 +255,9 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   name="$(basename "$dir")"
   [ -n "$FILTER" ] && [ "$repo" != "$FILTER" ] && continue
   mine "$repo" "$name" || continue
-  log="$(git -C "$dir" log --oneline "$BASE_BRANCH..HEAD" 2>/dev/null)"
+  base="$(base_branch_for "$repo")"
+  log="$(git -C "$dir" log --oneline "$base..HEAD" 2>/dev/null \
+         || git -C "$dir" log --oneline "origin/$base..HEAD" 2>/dev/null || true)"
   [ -n "$log" ] || continue
   printf '=== %s/%s\n%s\n\n' "$repo" "$name" "$log"
 done
@@ -228,7 +276,7 @@ fi
 # 판정 파일을 안 보고, 미커밋이 없고 기준 브랜치보다 앞서 있으면 물을 값이다.
 if [ -n "$OWNER" ] && [ "${self_ahead:-0}" != 0 ] && [ "${self_ahead:-?}" != '?' ] \
    && [ "${self_dirty:-0}" = 0 ]; then
-  printf '▶ 이 우산 워크트리에도 %s 앞에 커밋 %s개가 서 있다.\n' "$BASE_BRANCH" "$self_ahead"
+  printf '▶ 이 우산 워크트리에도 %s 앞에 커밋 %s개가 서 있다.\n' "${self_base:-$BASE_BRANCH}" "$self_ahead"
   printf '  land할지 사람에게 묻는다. 이 워크트리 안에서 부르면 지우지 않고 머지와 push만 한다.\n\n'
 fi
 
