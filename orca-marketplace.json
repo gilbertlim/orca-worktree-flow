@@ -6,7 +6,7 @@
       "id": "gilbertlim.worktree-flow",
       "source": {
         "kind": "git",
-        "url": "https://github.com/gilbertlim/orca-plugin.git",
+        "url": "https://github.com/gilbertlim/worktree-flow.git",
         "ref": "v1.2.0"
       },
       "description": "워크트리가 생기면 셋업 스크립트를 돌리고, 에이전트가 멈추면 알림을 띄운다.",
