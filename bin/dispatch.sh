@@ -120,7 +120,9 @@ fi
 journal "dispatch $REPO/$NAME -- $(head -1 "$PROMPT_FILE" | cut -c1-80)"
 
 printf '\n경로   %s\n' "$WT"
-printf '브랜치 %s\n' "$NAME"
+# Orca가 브랜치에 git 사용자명을 앞에 붙이는 일이 있어(gilbertim/<이름>) 워크트리
+# 이름과 안 맞는다. 짐작하지 않고 워크트리에 직접 묻는다.
+printf '브랜치 %s\n' "$(git -C "$WT" branch --show-current 2>/dev/null || printf '%s' "$NAME")"
 printf '진행   %s/bin/status.sh\n' "$PLUGIN_ROOT"
 printf '리뷰   %s/bin/review.sh %s %s\n' "$PLUGIN_ROOT" "$REPO" "$NAME"
 # set -e 아래라 마지막 줄이 참이 아니면 종료 코드가 1로 나간다. || true 가 그것을 막는다.
