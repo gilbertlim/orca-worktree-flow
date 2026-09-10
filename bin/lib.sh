@@ -70,9 +70,9 @@ for r in json.load(sys.stdin)["result"]["repos"]:
 ' "$1"
 }
 
-# 레포 displayName -> 메인 체크아웃 경로를 한 줄에 하나씩. 여러 레포를 도는
-# 자리가 있어 한 번에 들고 온다 -- 레포마다 repo_path 를 부르면 orca repo list 를
-# 그 수만큼 친다. 처음 쓸 때 채우고 그 뒤로는 안 친다.
+# 레포 displayName, 메인 체크아웃 경로, 프로젝트 그룹 id 를 탭으로 이어 한 줄에
+# 하나씩. 여러 레포를 도는 자리가 있어 한 번에 들고 온다 -- 레포마다 repo_path 를
+# 부르면 orca repo list 를 그 수만큼 친다. 처음 쓸 때 채우고 그 뒤로는 안 친다.
 # 서브셸에서 처음 부르면 그 메모가 부모로 안 돌아오므로, 레포를 여럿 도는 쪽은
 # 루프에 들기 전에 `repo_paths >/dev/null` 로 한 번 채워 둔다.
 REPO_PATHS=""
@@ -85,9 +85,10 @@ except Exception:
     sys.exit(0)
 for r in d.get("result", {}).get("repos", []):
     # 탭으로 이어 찍으므로 값 안의 탭은 턴다. TERMS, CARDS 블록과 같은 규칙이다.
-    print("%s\t%s" % (
+    print("%s\t%s\t%s" % (
         (r.get("displayName") or "").replace("\t", " "),
         (r.get("path") or "").replace("\t", " "),
+        r.get("projectGroupId") or "",
     ))
 ' || true)"
   printf '%s\n' "$REPO_PATHS"
@@ -114,13 +115,40 @@ base_branch_for() { # repo
   printf '%s' "${b:-$BASE_BRANCH}"
 }
 
-# 등록된 레포 이름 전부
-repo_names() {
-  orca repo list --json 2>/dev/null | python3 -c '
-import sys, json
-for r in json.load(sys.stdin)["result"]["repos"]:
-    print(r.get("displayName") or "(이름 없음)")
-'
+# 지금 서 있는 자리의 레포 displayName. 못 알아내면 빈 문자열이다.
+#
+# 워크스페이스 아래면 경로에서 바로 나온다(owner_id 가 "<레포>.<워크트리>"). 아니면
+# git 최상위를 등록된 경로와 맞춰 본다 -- 메인 체크아웃에서 부르는 경우다.
+current_repo() {
+  local owner top
+  owner="$(owner_id)"
+  [ -z "$owner" ] || { printf '%s' "${owner%%.*}"; return 0; }
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  [ -n "$top" ] || return 0
+  repo_paths | awk -F'\t' -v p="$top" '$2==p {print $1; exit}'
+}
+
+# 지금 서 있는 레포의 프로젝트 그룹 id. 그룹이 안 잡히면 빈 문자열이다.
+current_group() {
+  local me
+  me="$(current_repo)"
+  [ -n "$me" ] || return 0
+  repo_paths | awk -F'\t' -v n="$me" '$1==n {print $3; exit}'
+}
+
+# 후보 레포. 기본은 지금 서 있는 레포와 **같은 프로젝트 그룹**의 것만이다.
+#
+# 그룹으로 거르는 것은 한 머신에 무관한 프로젝트가 여럿 등록돼 있기 때문이다.
+# 전부를 후보로 내밀면 오케스트레이터가 남의 프로젝트 레포를 겨눌 수 있고,
+# 사람이 그걸 잡아내려면 목록을 통째로 읽어야 한다. Orca 가 이미 그룹을 알고
+# 있으니(repo list 의 projectGroupId) 그것을 그대로 쓴다.
+#
+# 그룹이 안 잡히는 자리(레포 밖, 그룹에 안 넣은 레포)에서는 거르지 않는다 --
+# 거기서 빈 목록을 주면 후보가 아예 없어진다.
+repo_names() { # [--all]
+  local group=""
+  [ "${1:-}" = "--all" ] || group="$(current_group)"
+  repo_paths | awk -F'\t' -v g="$group" 'g == "" || $3 == g { print ($1 == "" ? "(이름 없음)" : $1) }'
 }
 
 worktree_path() { printf '%s/%s/%s' "$ORCA_WORKSPACES" "$1" "$2"; }
@@ -140,8 +168,8 @@ resolve_repo() {
   local name="$1" path
   path="$(repo_path "$name")"
   [ -n "$path" ] || die "orca에 등록되지 않은 레포다: $name
-등록된 것: $(repo_names | tr '\n' ' ')
-등록은 Orca 앱에서 하거나 orca repo add 로 한다."
+같은 그룹: $(repo_names | tr '\n' ' ')
+전부 보려면 repo_names --all 이다. 등록은 Orca 앱에서 하거나 orca repo add 로 한다."
   printf '%s' "$path"
 }
 

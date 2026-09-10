@@ -35,6 +35,39 @@ description: Use when work spans several repos (or several people touching one r
 
 **한 우산 워크트리에서는 기능 하나만 다룬다.** 서브 레포가 많을수록 오케스트레이터의 컨텍스트가 빨리 차고, 요약 과정에서 결정과 근거가 누락된다. 두 번째 기능은 같은 우산 레포에 워크트리를 새로 따서 거기서 시작한다.
 
+## 어느 레포에 시킬지, 이름을 무엇으로 할지
+
+`dispatch.sh --repos`가 **지금 서 있는 레포와 같은 Orca 프로젝트 그룹**의 레포만 `이름<TAB>메인 체크아웃 경로`로 찍는다. 한 머신에 무관한 프로젝트가 여럿 등록돼 있어도 후보가 그 프로젝트 안으로 좁혀진다. 그룹은 Orca가 이미 들고 있는 값(`orca repo list`의 `projectGroupId`)이라 따로 적을 것이 없고, 그룹에 안 넣은 레포에서 부르면 거르지 않는다.
+
+```
+$ bin/dispatch.sh --repos
+orca-plugin           /Users/me/dev/orca-plugin
+orca-plugin-sub-repo  /Users/me/dev/orca-plugin-sub-repo
+```
+
+경로를 함께 주는 것은 오케스트레이터가 각 레포의 `CLAUDE.md`를 읽고 담당 경계를 봐야 하기 때문이다. 그것으로 안 갈리면 작업 설명의 도메인 용어를 후보 레포에서 `grep`한다. 그래도 둘 이상 남으면 근거와 함께 사람에게 고르게 한다. 그룹 밖까지 봐야 하면 `--repos --all`이다.
+
+**워크트리 이름은 `<동작>-<대상>` 케밥케이스 2~4단어다.**
+
+```
+우산:  orca-plugin/login-refactor              기능 전체
+서브:  orca-plugin-sub-repo/orca-plugin.login-refactor.auth-api   그 레포가 맡는 몫
+탭:    auth-api
+```
+
+서브 이름에 기능 이름을 다시 넣지 않는다. 접두에 이미 들어 있다. 레포 이름도 안 넣는다. 경로 앞칸이 이미 레포다. 브랜치 이름은 짓지 않는다 — Orca가 워크트리 이름에서 만들고 git 사용자명을 앞에 붙이는 일이 있다.
+
+## 기다릴 때는 status를 반복해 치지 않는다
+
+`status.sh --wait`를 백그라운드로 걸어 두면 사람이 부를 마디가 설 때까지 자다가 그때 깨어나 표를 한 번 찍는다. 깨어나는 조건은 넷이다 — 리뷰를 돌릴 워크트리가 섰다, 판정에 blocking이 남았다, 내가 낸 것이 전부 닫혔다, 에이전트가 사람 손에 막혔다.
+
+```
+▶ 깨어났다: 리뷰를 돌릴 워크트리 2개 (180초 기다림)
+```
+
+기본 주기는 60초, 상한은 4시간이고 `WAIT_INTERVAL=`, `WAIT_TIMEOUT=`으로 바꾼다. 우산 워크트리 안에서만 돈다 — 밖에서는 누구 것을 기다릴지가 안 정해진다. <br>
+깨어난 뒤 다음 단계를 혼자 부르지는 않는다. 무엇 때문에 깨어났는지를 전하고 사람에게 확인받는다.
+
 ## 한 사이클
 
 ```bash
@@ -50,6 +83,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/dispatch.sh shared migration-platform-trade /tmp/share
 
 # 3. 진행을 본다. 우산 워크트리 안이면 제 것만 찍는다
 ${CLAUDE_PLUGIN_ROOT}/bin/status.sh
+#   기다릴 자리에서는 --wait 를 백그라운드로 건다. 반복해서 치지 않는다
+${CLAUDE_PLUGIN_ROOT}/bin/status.sh --wait
 
 # 4. 커밋이 서면 같은 워크트리에서 리뷰어를 띄운다. 결과는 파일로 떨어진다
 ${CLAUDE_PLUGIN_ROOT}/bin/review.sh shared orca-plugin.orca-check.migration-platform-trade
