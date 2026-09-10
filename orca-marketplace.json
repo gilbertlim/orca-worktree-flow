@@ -9,7 +9,7 @@
         "url": "https://github.com/gilbertlim/orca-worktree-flow.git",
         "ref": "v1.2.1"
       },
-      "description": "워크트리가 생기면 셋업 스크립트를 돌리고, 에이전트가 멈추면 알림을 띄운다.",
+      "description": "Orca 워크트리 작업 관리를 위한 초기 설정과 에이전트 상태 알림",
       "categories": ["workflow"]
     }
   ]

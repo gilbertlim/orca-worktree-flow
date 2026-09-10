@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
-# 지금 떠 있는 워크트리를 한 자리에 찍는다.
+# 워크트리 상태를 조회한다.
 #
-#   status.sh              우산 워크트리 안이면 제 것만, 밖이면 전부
-#   status.sh --all        우산과 상관없이 전부
-#   status.sh shared       한 레포만
-#   status.sh --summary    표 끝에 세어 둔 값을 기계가 읽을 꼴로 덧붙인다
-#   status.sh --wait       사람이 부를 마디가 설 때까지 기다렸다가 그때 한 번 찍는다
+#   status.sh            우산 안에서는 소속만, 밖에서는 전체 조회
+#   status.sh --all      우산과 관계없이 전체 조회
+#   status.sh shared     해당 레포 조회
+#   status.sh --summary  프로그램이 읽을 집계 블록 추가
+#   status.sh --wait     다음 작업이 필요할 때까지 대기 후 한 번 출력
 #
-# 기본이 "제 것만"인 이유는, 서브 레포 하나를 우산 여럿이 겨눌 수 있어서다.
-# 남의 워크트리가 표에 섞이면 다음 마디를 남의 것에 대고 부르게 된다.
-# 제 것인지는 이름의 "<우산레포>.<우산워크트리>." 접두로 가른다.
-#
-# --summary 는 앱 플러그인이 쓴다. 알림 본문은 비례폭이라 이 표의 칸 정렬이
-# 통째로 무너지고 배너는 두어 줄에서 잘리므로, 거기엔 표가 아니라 수를 싣는다.
-# 플러그인은 앱 프로세스에서 부르므로 우산이 없고, 그래서 늘 전부를 센다.
+# <우산레포>.<우산워크트리>. 접두로 소속을 구분한다.
+# 같은 서브 레포를 여러 우산이 사용할 때 다른 작업과 혼동하지 않기 위해서다.
+# 앱 플러그인은 --summary로 전체를 집계한다. 알림의 비례폭 글꼴과 짧은 배너에는
+# 표를 정렬하기 어려워 집계만 표시한다.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -35,8 +32,7 @@ done
 OWNER=""
 [ "$ALL" = 1 ] || OWNER="$(owner_id)"
 
-# 이 워크트리가 내 것인가. 내가 만든 서브 레포 워크트리와, 내가 앉아 있는
-# 우산 워크트리 자신이 여기 걸린다.
+# 현재 우산 자체와 그 우산이 만든 서브 워크트리인지 확인한다.
 mine() { # repo name
   [ -n "$OWNER" ] || return 0
   case "$1.$2" in "$OWNER") return 0 ;; esac
@@ -44,16 +40,10 @@ mine() { # repo name
   return 1
 }
 
-# --wait 는 사람이 부를 마디가 설 때까지 자고, 그때 깨어나 아래 표를 한 번 찍는다.
-#
-# 오케스트레이터가 status 를 반복해서 치는 대신 이것을 background 로 걸어 둔다.
-# 사람에게 폴링을 시키지 않으려는 것이고, 깨어날 자리는 결국 승인이 필요한
-# 자리 넷뿐이다 -- 리뷰를 돌릴 것이 섰다, 판정에 blocking 이 남았다, 전부
-# 닫혔다, 에이전트가 사람 손에 막혔다.
-#
-# 세는 것은 제 자신을 --summary 로 다시 불러서 한다. 표를 그리는 코드를 두 벌
-# 두지 않으려는 것이고, --mine 을 함께 주는 것은 --summary 가 ALL=1 을 켜기
-# 때문이다(앱 플러그인이 우산 없이 부르는 자리라 그렇게 돼 있다).
+# --wait는 다음 작업이 필요한 상태까지 대기한다. 반복 조회 대신 백그라운드로 실행한다.
+# 리뷰 준비, blocking 잔여, 전체 머지 준비 완료, 사용자 입력 대기를 확인한다.
+# 집계는 자신을 --summary로 호출해 재사용한다. --summary는 앱의 전체 조회용이므로
+# --mine을 함께 지정해 현재 우산으로 한정한다.
 WAKE=""
 if [ "$WAIT" = 1 ]; then
   [ -n "$OWNER" ] || die "--wait 는 우산 워크트리 안에서만 쓴다. 지금은 우산이 안 잡힌다."
@@ -66,21 +56,21 @@ if [ "$WAIT" = 1 ]; then
     owned="$(c_of owned)"; blocked="$(c_of blocked)"
     ready="$(c_of review_ready)"; hb="$(c_of handback)"; closed="$(c_of closed)"
 
-    if   [ "${owned:-0}" = 0 ];        then WAKE="낸 워크트리가 없다"
-    elif [ "${blocked:-0}" != 0 ];     then WAKE="에이전트 ${blocked}개가 사람 손을 기다린다"
-    elif [ "${ready:-0}" != 0 ];       then WAKE="리뷰를 돌릴 워크트리 ${ready}개"
-    elif [ "${hb:-0}" != 0 ];          then WAKE="blocking 이 남은 워크트리 ${hb}개"
-    elif [ "$owned" = "${closed:-0}" ]; then WAKE="내가 낸 ${owned}개가 전부 닫혔다"
-    elif [ "$waited" -ge "$limit" ];   then WAKE="${limit}초를 기다렸다 -- 아직 도는 중이다"
+    if   [ "${owned:-0}" = 0 ];        then WAKE="소속 워크트리가 없다"
+    elif [ "${blocked:-0}" != 0 ];     then WAKE="에이전트 ${blocked}개가 사용자 입력을 기다린다"
+    elif [ "${ready:-0}" != 0 ];       then WAKE="리뷰할 워크트리 ${ready}개"
+    elif [ "${hb:-0}" != 0 ];          then WAKE="blocking이 남은 워크트리 ${hb}개"
+    elif [ "$owned" = "${closed:-0}" ]; then WAKE="소속 워크트리 ${owned}개가 모두 머지할 준비가 됐다"
+    elif [ "$waited" -ge "$limit" ];   then WAKE="${limit}초를 기다렸다 -- 아직 작업 중이다"
     fi
     [ -z "$WAKE" ] || break
     sleep "$interval"
     waited=$((waited + interval))
   done
-  printf '▶ 깨어났다: %s (%s초 기다림)\n\n' "$WAKE" "$waited"
+  printf '대기 종료: %s (%s초 대기)\n\n' "$WAKE" "$waited"
 fi
 
-# --summary 일 때만 찍는다. 표 뒤에 붙으므로 사람이 그냥 부르면 안 보인다.
+# --summary 일 때만 출력한다. 표 뒤에 붙으므로 사람이 그냥 부르면 안 보인다.
 emit_counts() {
   [ "$SUMMARY" = 1 ] || return 0
   printf -- '--- counts\n'
@@ -97,16 +87,15 @@ emit_counts() {
   printf 'self_ahead=%s\n' "${self_ahead:-0}"
 }
 
-# 우산이 낸 워크트리 중 몇 개가 닫혔나. 우산 자신은 이 셈에 안 넣는다 --
-# 오케스트레이터가 앉아 있는 자리라 늘 더럽고, 섞으면 서브 레포가 다 닫혀도
-# "전부 닫혔다"가 영영 안 뜬다.
+# 소속 서브 워크트리의 머지 준비 상태를 집계한다. 우산은 진행 문서 등에
+# 미커밋 변경이 계속 생길 수 있어 전체 완료 집계에서 제외한다.
 n_owned=0
 n_ready=0
 n_handback=0
 n_closed=0
 
-# 우산 자신은 따로 본다. 빼 두기만 하면 우산이 제 손으로 짠 것은 아무도 안 묻고,
-# 실제로 그래서 사람이 세 번을 먼저 밀었다.
+# 우산의 직접 변경도 머지 여부를 확인할 수 있도록 별도로 집계한다.
+# 이 안내가 없어 사용자가 세 번 먼저 요청했던 사례가 있다.
 self_ahead=0
 self_dirty=0
 self_base=""
@@ -118,14 +107,12 @@ n_dirty=0
 n_idle=0
 n_blocked=0
 
-# 레포마다 기준 브랜치가 다르다. base_branch_for 는 lib.sh 에 있고 dispatch,
-# review, land 도 같은 것을 쓴다 -- status 가 안내한 land 가 실제로 돌게 하려면
-# 기준을 한 자리에서 정해야 한다.
-# 그 함수를 아래 루프의 명령 치환(서브셸)에서 부르므로 레포 경로 메모가 부모로
-# 안 돌아온다. 여기서 한 번 채워 두면 서브셸이 그것을 물려받는다.
+# 레포별 기준 브랜치는 dispatch, review, land와 같은 base_branch_for로 읽는다.
+# 명령 치환의 서브셸에서 만든 캐시는 부모에게 전달되지 않으므로
+# 반복 조회 전에 repo_paths 캐시를 채워 상속한다.
 repo_paths >/dev/null
 
-# preview 는 TUI 마지막 줄이다. 도는 중인지를 추가 호출 없이 여기서 가른다.
+# preview는 TUI 마지막 줄이다. 추가 호출 없이 실행 여부를 확인한다.
 TERMS="$(orca terminal list --json 2>/dev/null | python3 -c '
 import sys, json
 try:
@@ -145,8 +132,7 @@ for t in d.get("result", {}).get("terminals", []):
     ))
 ' || true)"
 
-# 카드에 적힌 것. 커밋 수와 달리 이건 에이전트가 스스로 쓴 것이라,
-# git이 못 보는 것("테스트 도는 중", "FK에 막힘")이 여기 앉는다.
+# 에이전트가 작성한 카드 문구. 테스트나 FK 문제처럼 Git 조회로 알 수 없는 상태를 표시한다.
 CARDS="$(orca worktree list --json 2>/dev/null | python3 -c '
 import sys, json
 try:
@@ -160,7 +146,7 @@ for w in d.get("result", {}).get("worktrees", []):
 ' || true)"
 
 if [ -n "$OWNER" ]; then
-  printf '우산 %s -- 제 것만 찍는다 (전부는 --all)\n\n' "$OWNER"
+  printf '우산 %s -- 소속 워크트리만 표시한다 (전체 조회는 --all)\n\n' "$OWNER"
 fi
 
 printf '%-40s %-6s %-7s %-14s %s\n' "워크트리" "커밋" "미커밋" "리뷰" "터미널"
@@ -175,22 +161,18 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   mine "$repo" "$name" || continue
   found=1
 
-  # 기준 브랜치가 이 워크트리에 없으면 origin 쪽을 본다. 워크트리는 브랜치를
-  # 메인 체크아웃과 나눠 쓰므로, 이 fallback 이 실제로 도는 것은 그 기준 브랜치를
-  # 로컬에 한 번도 꺼내 놓은 적 없는 레포뿐이다.
-  # 둘 다 없으면 '?' 로 둔다 -- 0 은 "커밋이 없다"라 land 를 안 묻는 값이고,
-  # 못 센 것을 0 으로 적으면 그 둘이 같아진다.
-  # ponytail: 로컬 기준을 먼저 본다. 메인 체크아웃이 origin 보다 낡아 있으면
-  # 이미 land 된 커밋까지 이 워크트리 몫으로 세어진다. land 가 머지하는 대상도
-  # 그 로컬 브랜치라 표와 land 가 어긋나지는 않는다. 어긋나면 origin 을 먼저
-  # 보게 바꾸고, 그때는 land 쪽도 같이 옮긴다.
+  # 로컬 기준 브랜치가 없으면 origin을 사용한다. 브랜치는 메인 체크아웃과 공유하므로
+  # 로컬에 기준 브랜치를 만든 적이 없는 레포에서만 대체 경로를 사용한다.
+  # 둘 다 없으면 커밋 없음(0)과 구분하도록 ?를 표시한다.
+  # 로컬이 origin보다 오래되면 이미 land한 커밋도 집계되지만, land 대상도 로컬이므로
+  # 조회와 머지 기준은 일치한다. origin 우선으로 바꿀 때는 land도 함께 검토해야 한다.
   base="$(base_branch_for "$repo")"
   ahead="$(git -C "$dir" rev-list --count "$base..HEAD" 2>/dev/null \
            || git -C "$dir" rev-list --count "origin/$base..HEAD" 2>/dev/null \
            || echo '?')"
   dirty="$(git -C "$dir" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 
-  # 터미널은 개수만으로는 못 읽는다. 도는 중과 승인을 기다리는 중이 같은 "1개"다.
+  # 터미널 개수만으로는 실행 중과 승인 대기를 구분할 수 없어 상태도 조회한다.
   rows="$(printf '%s\n' "$TERMS" | awk -F'\t' -v p="$dir" '$1==p')"
   tcount="$(printf '%s\n' "$rows" | grep -c . || true)"
   if [ "${tcount:-0}" = 0 ]; then
@@ -203,17 +185,16 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
       [ "$st" = "막힘" ] && n_blocked=$((n_blocked + 1))
       states="${states:+$states, }$st"
     done <<< "$rows"
-    term="${tcount}개 · ${states:-?}"
+    term="${tcount}개, ${states:-?}"
   fi
 
-  # 리뷰는 몇 차까지 돌았는지가 곧 처지다. 마지막 커밋보다 판정이 오래됐으면
-  # 고친 뒤 재리뷰를 안 돌린 것이다.
+  # 리뷰 차수와 최신 여부를 표시한다. 판정보다 최신 커밋이 있으면 재리뷰가 필요하다.
   rf="$(review_file "$repo" "$name")"
   rounds="$(rounds_done "$repo" "$name")"
   if [ "$rounds" = 0 ]; then
     review="안 함"
   elif [ ! -f "$rf" ]; then
-    # 판정 파일이 밀려 있고 새것이 아직 없다 -- 다음 라운드가 도는 중이다.
+    # 이전 판정만 보관돼 있고 새 판정이 없으면 다음 리뷰가 진행 중이다.
     review="$((rounds + 1))차 중"
   else
     rt="$(stat -f %m "$rf" 2>/dev/null || stat -c %Y "$rf" 2>/dev/null || echo 0)"
@@ -221,8 +202,8 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
     if [ "$rt" -lt "$ct" ]; then review="${rounds}차 낡음"; else review="${rounds}차"; fi
   fi
 
-  # 닫힘: 커밋이 서 있고, 미커밋이 없고, 판정이 최신이고, blocking이 0.
-  # 넷 다 맞아야 land를 물을 값이다.
+  # 머지 준비 조건: 커밋 있음, 미커밋 변경 없음, 최신 판정, blocking 0건.
+  # 네 조건을 모두 만족하면 land 여부를 확인한다.
   case "$repo.$name" in
     "$OWNER")
       self_ahead="${ahead:-0}"
@@ -232,15 +213,14 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
     *)
       if [ -n "$OWNER" ]; then
         n_owned=$((n_owned + 1))
-        # 다음에 무엇을 부를 값인지로 가른다 -- review, handback, land 셋이다.
-        # --wait 가 이 셋 중 하나가 서면 깨어난다. 미커밋이 남아 있거나 커밋이
-        # 아직 없으면 셋 다 아니다 -- 에이전트가 일하는 중이라 부를 것이 없다.
+        # review, handback, land 중 다음 작업을 구분한다. --wait도 이 조건을 사용한다.
+        # 미커밋 변경이 있거나 커밋이 없으면 작업 중이므로 어느 단계도 요청하지 않는다.
         if [ "${dirty:-0}" = 0 ] && [ "${ahead:-0}" != 0 ] && [ "${ahead:-?}" != '?' ]; then
           case "$review" in
-            # 리뷰어가 도는 중이다. 판정이 떨어질 때까지는 부를 것이 없다.
+            # 리뷰 진행 중에는 판정이 나올 때까지 다음 작업을 요청하지 않는다.
             *중) ;;
             "안 함"|*낡음) n_ready=$((n_ready + 1)) ;;
-            # 여기 오면 판정이 있고 커밋보다 새것이다. blocking 이 갈림길이다.
+            # 최신 판정의 blocking 유무로 수정 요청과 머지 준비를 구분한다.
             *)
               if [ "$(blocking_count "$rf")" = 0 ]; then
                 n_closed=$((n_closed + 1))
@@ -273,7 +253,7 @@ if [ "$found" != 1 ]; then
   if [ -n "$OWNER" ]; then
     printf '%s 가 만든 워크트리가 없다. 전부 보려면 --all 이다.\n' "$OWNER"
   else
-    printf '떠 있는 워크트리가 없다.\n'
+    printf '워크트리가 없다.\n'
   fi
   emit_counts
   exit 0
@@ -293,35 +273,33 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   printf '=== %s/%s\n%s\n\n' "$repo" "$name" "$log"
 done
 
-# 승인이 필요한 마디를 그대로 짚어 준다. --wait 가 깨어나는 조건과 같은 셈이라,
-# 백그라운드로 걸어 두든 사람이 직접 치든 같은 문장을 본다.
+# --wait와 같은 조건으로 사용자 확인이 필요한 다음 작업을 안내한다.
 if [ "${n_ready:-0}" -gt 0 ]; then
-  printf '▶ 리뷰를 돌릴 워크트리 %s개. /orca:review 를 부를지 사람에게 묻는다.\n\n' "$n_ready"
+  printf '리뷰할 워크트리 %s개. /orca:review 실행 여부를 사용자에게 묻는다.\n\n' "$n_ready"
 fi
 if [ "${n_handback:-0}" -gt 0 ]; then
-  printf '▶ 판정에 blocking 이 남은 워크트리 %s개. /orca:handback 이다.\n\n' "$n_handback"
+  printf '판정에 blocking이 남은 워크트리 %s개. /orca:handback으로 수정을 요청한다.\n\n' "$n_handback"
 fi
 
-# 다 닫혔으면 그것을 말해 준다. 표만 찍고 말면 오케스트레이터가 계속 폴링하거나
-# 혼자 land해 버린다. 무엇을 할지는 여기서 안 정하고 사람에게 넘긴다 --
-# 계약이 걸린 변경은 머지 순서가 있고 그건 이 표에 안 보인다.
+# 머지 준비가 끝나면 사용자 판단이 필요함을 안내한다.
+# 불필요한 폴링과 자동 land를 막는다. 계약에 따른 머지 순서는 이 표에 없기 때문이다.
 if [ "${n_owned:-0}" -gt 0 ] && [ "$n_owned" = "$n_closed" ]; then
-  printf '▶ 내가 낸 워크트리 %s개가 전부 닫혔다.\n' "$n_owned"
-  printf '  진척을 기록하고 land할지 사람에게 묻는다.\n\n'
+  printf '소속 워크트리 %s개가 모두 머지할 준비가 됐다.\n' "$n_owned"
+  printf '  진행 상황을 기록하고 land할지 사용자에게 묻는다.\n\n'
 elif [ "${n_closed:-0}" -gt 0 ]; then
-  printf '▶ %s개 중 %s개가 닫혔다. 나머지가 끝나면 land를 묻는다.\n\n' "$n_owned" "$n_closed"
+  printf '%s개 중 %s개가 머지할 준비가 됐다. 나머지가 끝나면 land를 묻는다.\n\n' "$n_owned" "$n_closed"
 fi
 
-# 우산이 제 손으로 짠 것. 서브 레포와 조건이 다르다 -- 리뷰를 안 거치는 자리라
-# 판정 파일을 안 보고, 미커밋이 없고 기준 브랜치보다 앞서 있으면 물을 값이다.
+# 우산의 직접 변경은 판정 파일 없이 확인한다.
+# 미커밋 변경이 없고 기준 브랜치보다 앞서 있으면 머지 여부를 묻는다.
 if [ -n "$OWNER" ] && [ "${self_ahead:-0}" != 0 ] && [ "${self_ahead:-?}" != '?' ] \
    && [ "${self_dirty:-0}" = 0 ]; then
-  printf '▶ 이 우산 워크트리에도 %s 앞에 커밋 %s개가 서 있다.\n' "${self_base:-$BASE_BRANCH}" "$self_ahead"
-  printf '  land할지 사람에게 묻는다. 이 워크트리 안에서 부르면 지우지 않고 머지와 push만 한다.\n\n'
+  printf '이 우산 워크트리에도 %s 앞에 커밋 %s개가 있다.\n' "${self_base:-$BASE_BRANCH}" "$self_ahead"
+  printf '  land할지 사용자에게 묻는다. 이 워크트리 안에서 실행하면 삭제하지 않고 머지와 push만 한다.\n\n'
 fi
 
-# 카드도 커밋도 못 드는 것 -- 무엇을 왜 그렇게 했는지 -- 이 파일에 쌓인다.
-# 컨텍스트가 차 세션을 갈아탈 때 이어갈 자리가 여기다.
+# 우산별 작업 이력을 표시한다. 세션을 이어받을 때 참고한다.
+# 결정 내용과 근거는 자동 기록되지 않으므로 별도 문서에 남겨야 한다.
 if [ -n "$OWNER" ] && [ -f "$(journal_file)" ]; then
   printf '기록 %s\n' "$(journal_file)"
   tail -5 "$(journal_file)" | sed 's/^/  /'

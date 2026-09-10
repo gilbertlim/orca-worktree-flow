@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# 워크트리 브랜치를 그 레포의 기준 브랜치에 머지하고 push한 뒤 워크트리를 지운다.
+# 워크트리 브랜치를 기준 브랜치에 머지하고 push한 뒤 워크트리를 삭제한다.
 #
 #   land.sh <repo> <worktree-name>
-#   KEEP=1 land.sh <repo> <worktree-name>       머지만 하고 워크트리를 남긴다
-#   NO_PUSH=1 land.sh <repo> <worktree-name>    push를 건너뛰고 워크트리를 남긴다
+#   KEEP=1 land.sh <repo> <worktree-name>     push 후 워크트리 유지
+#   NO_PUSH=1 land.sh <repo> <worktree-name>  push 생략, 워크트리 유지
 #
-# 우산 워크트리 자신을 받을 때는 판정 파일을 안 본다. 리뷰를 안 거치는 자리라
-# 그렇고, 그 판단은 status.sh 와 같은 기준(owner_id)으로 한다.
-#
-# push를 하는 것이 정책이다. 사람이 최종 게이트인 것은 맞지만 그 게이트는
-# 커밋 훅의 ask 프롬프트가 잡는다. 스크립트가 push를 아예 안 하면 닫았다고
-# 말한 작업이 로컬에만 남는다.
+# 우산 워크트리는 리뷰를 거치지 않아 판정 파일을 검사하지 않는다.
+# 우산 여부는 status.sh와 같은 owner_id로 판단한다.
+# push 시 훅의 확인 프롬프트에서 사용자 확인을 받는다.
+# push를 생략하면 완료한 작업이 로컬에만 남으므로 기본으로 실행한다.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -21,15 +19,12 @@ MAIN="$(resolve_repo "$REPO")"
 WT="$(worktree_path "$REPO" "$NAME")"
 require_worktree "$WT"
 
-# 기준 브랜치는 그 레포 것으로 정한다. status, dispatch, review 와 같은 함수다.
-# status 가 "닫혔다"고 안내한 것을 여기서 실제로 머지하려면 둘이 같아야 한다.
+# status, dispatch, review와 같은 함수로 기준 브랜치를 정한다.
+# status의 머지 안내와 실제 머지 대상이 일치해야 한다.
 BASE="$(base_branch_for "$REPO")"
 
-# 우산 워크트리 자신인가. status.sh 가 우산을 가르는 기준과 같은 것을 쓴다.
-# 그쪽은 우산이면 판정 파일을 안 보고 커밋만 세는데(case "$repo.$name" in "$OWNER"),
-# land 만 판정을 요구하면 우산을 받을 때마다 FORCE=1 을 쳐야 한다. 그러면 리뷰를
-# 안 거친 것을 막으려고 둔 가드가 습관적으로 꺼지고, 정작 서브 레포에서 그것이
-# 필요할 때도 같이 꺼진다. 둘을 한 기준으로 맞춘다.
+# status.sh와 같은 기준으로 우산을 구분한다. 우산은 판정 파일 없이 커밋만 확인한다.
+# land가 매번 FORCE=1을 요구하면 리뷰 검사를 습관적으로 생략할 수 있어 기준을 맞춘다.
 UMBRELLA=0
 [ "$REPO.$NAME" != "$(owner_id)" ] || UMBRELLA=1
 
@@ -40,16 +35,13 @@ DIRTY="$(git -C "$WT" status --porcelain)"
 [ -z "$DIRTY" ] || die "워크트리에 미커밋 변경이 남아 있다. 커밋하거나 버린 뒤 다시 부른다.
 $DIRTY"
 
-# 메인 체크아웃이 기준 브랜치에 앉아 있는지를 먼저 본다. 아래 rev-list 가
-# "$BASE" 를 쓰는데, 기준 브랜치가 origin 에만 있는 레포에서는 그것이 git 의
-# fatal 만 남기고 128로 끊긴다. 이 검사가 위에 있으면 그 자리에 사람이 읽을
-# 문장이 나오고, rev-list 는 브랜치가 있는 것이 보장된 뒤에 돈다.
+# rev-list 전에 메인 체크아웃의 브랜치를 확인한다. 기준 브랜치가 origin에만 있으면
+# Git 오류와 코드 128로 종료되므로, 먼저 사용자에게 원인을 안내한다.
 CUR="$(git -C "$MAIN" branch --show-current)"
 [ "$CUR" = "$BASE" ] || die "메인 체크아웃이 $BASE 가 아니라 $CUR 에 있다. 옮긴 뒤 다시 부른다."
 
-# 머지가 이미 끝난 워크트리도 여기로 온다. push가 한 번 실패했거나, 사람이
-# 손으로 머지했거나, KEEP=1 로 남겨 둔 것을 나중에 치우는 자리다. 그때
-# "머지할 것이 없다"로 죽으면 뒷정리를 할 마디가 아예 없다.
+# push 실패, 수동 머지, KEEP=1 이후에도 다시 실행할 수 있다.
+# 이미 머지된 경우 오류로 중단하지 않고 push와 정리를 진행한다.
 AHEAD="$(git -C "$WT" rev-list --count "$BASE..$BRANCH")"
 MERGED=0
 if [ "$AHEAD" = 0 ]; then
@@ -63,27 +55,26 @@ else
   git -C "$WT" log --oneline "$BASE..$BRANCH"
 fi
 
-# 리뷰를 안 거친 것이 조용히 기준 브랜치에 들어가지 않게 한다.
-# 이미 들어간 뒤라면 막을 것이 없다 -- 그 판단은 지났고 남은 것은 뒷정리다.
+# 리뷰하지 않은 변경이 머지되지 않도록 검사한다. 이미 머지됐다면 정리만 진행한다.
 RF="$(review_file "$REPO" "$NAME")"
 if [ "$MERGED" = 1 ]; then
   :
 elif [ "$UMBRELLA" = 1 ]; then
-  # 오케스트레이터가 앉은 자리다. 여기 짜인 것은 진행 문서와 계약 초안이라
-  # 리뷰어를 붙이는 자리가 아니다. 무엇이 들어가는지는 위 로그로 이미 보였다.
-  printf '\n우산 워크트리다. 리뷰를 안 거치는 자리라 판정 파일은 안 본다.\n\n'
+  # 우산의 진행 문서와 계약 초안은 리뷰 대상에서 제외한다.
+  # 반영할 변경은 앞의 커밋 로그로 확인한다.
+  printf '\n우산 워크트리는 리뷰 대상이 아니므로 판정 파일을 검사하지 않는다.\n\n'
 elif [ ! -f "$RF" ]; then
   printf '\n리뷰 결과 파일이 없다: %s\n' "$RF" >&2
   printf '%s/bin/review.sh %s %s 로 먼저 리뷰한다. 건너뛰려면 FORCE=1 을 준다.\n' "$PLUGIN_ROOT" "$REPO" "$NAME" >&2
   [ "${FORCE:-}" = "1" ] || exit 1
 else
   printf '\n리뷰 판정 (%s) -- blocking %s건\n' "$RF" "$(blocking_count "$RF")"
-  # 앞의 -- 를 printf 형식으로 두면 옵션으로 먹힌다.
+  # --로 시작하는 문구가 옵션으로 해석되지 않도록 형식 문자열과 분리한다.
   blocking_section "$RF" 20
-  printf '%s\n\n' "위 판정이 닫힌 것이 맞는지 보고 진행한다"
+  printf '%s\n\n' "위 리뷰 지적이 해결됐는지 확인하고 진행한다"
 fi
 
-# 메인 체크아웃은 다른 세션이 함께 만지므로, 남의 미커밋 변경이 있으면 알리고 멈춘다.
+# 다른 세션도 메인 체크아웃을 사용하므로 미커밋 변경이 있으면 안내하고 중단한다.
 OTHER="$(git -C "$MAIN" status --porcelain)"
 if [ -n "$OTHER" ]; then
   printf '메인 체크아웃에 미커밋 변경이 있다. 머지가 그것과 같은 파일을 건드리면 실패한다.\n' >&2
@@ -92,10 +83,9 @@ if [ -n "$OTHER" ]; then
   [ "${FORCE:-}" = "1" ] || exit 1
 fi
 
-[ "$MERGED" = 1 ] || git -C "$MAIN" merge --no-ff "$BRANCH" -m "merge: $BRANCH 를 받는다"
+[ "$MERGED" = 1 ] || git -C "$MAIN" merge --no-ff "$BRANCH" -m "merge: $BRANCH 머지"
 
-# 일부러 건너뛴 것과 하려다 실패한 것을 가른다. 둘을 0 하나로 뭉치면
-# NO_PUSH=1 이 실패 경로로 떨어져 "push가 안 됐다"를 찍고 1로 빠진다.
+# push 생략과 실패를 구분한다. 같은 값이면 NO_PUSH=1도 실패로 처리될 수 있다.
 if [ "${NO_PUSH:-}" = "1" ]; then
   printf '\npush를 건너뛴다. 로컬 %s 에만 있다.\n' "$BASE"
   PUSHED=skip
@@ -105,27 +95,25 @@ else
 fi
 
 if [ "$PUSHED" = 0 ]; then
-  # 머지는 됐는데 push만 안 된 상태다. 카드가 이걸 들고 있어야 한다 --
-  # 안 그러면 리뷰 중으로 보이고, 실제로는 손볼 것이 남지 않은 워크트리가 방치된다.
-  card "$WT" "" "머지됨, push 실패 -- 손으로 올린다"
+  # 머지는 완료됐지만 push는 실패한 상태를 카드에 기록해 남은 작업을 표시한다.
+  card "$WT" "" "머지됨, push 실패 -- 직접 올린다"
   journal "land $REPO/$NAME -- $BASE 에 머지, push 실패"
-  printf 'push가 안 됐다. 워크트리를 남긴다 -- 지우면 되돌릴 자리가 사라진다.\n' >&2
-  # land를 다시 부르라고 하지 않는다. 머지는 이미 됐으니 다음 호출은
-  # "머지할 것이 없다"에서 멈춘다. 남은 것은 push와 뒷정리 둘뿐이다.
-  printf '\n손으로 마무리한다:\n' >&2
+  printf 'push에 실패했다. 복구할 수 있도록 워크트리를 유지한다.\n' >&2
+  # 실패 시 직접 실행할 push와 워크트리 정리 명령을 안내한다.
+  printf '\n직접 마무리한다:\n' >&2
   printf '  git -C %s push origin %s\n' "$MAIN" "$BASE" >&2
   printf '  orca worktree rm --worktree "path:%s" --force\n' "$WT" >&2
   exit 1
 fi
 
-# push를 건너뛰면 워크트리도 남긴다. 브랜치를 지우고 나면 다시 올릴 자리가
-# 로컬 기준 브랜치 하나뿐이라, 되돌릴 일이 생겼을 때 골라낼 것이 없다.
+# push를 생략하면 워크트리를 유지한다. 작업 브랜치가 있어야
+# 로컬 기준 브랜치에 반영한 변경을 나중에 구분하고 복구하기 쉽다.
 if [ "$PUSHED" = skip ]; then
   card "$WT" "" "머지됨, push 건너뜀 -- 로컬 $BASE 에만"
   journal "land $REPO/$NAME -- 로컬 $BASE 에 머지 (커밋 ${AHEAD}개, push 건너뜀)"
 else
   card "$WT" completed "$BASE 에 머지, push 완료"
-  # 워크트리와 카드는 아래에서 지워진다. 무엇이 닫혔는지는 이 줄로만 남는다.
+  # 워크트리와 카드가 삭제된 뒤에도 머지 이력을 확인할 수 있도록 기록한다.
   if [ "$MERGED" = 1 ]; then
     journal "land $REPO/$NAME -- 이미 머지돼 있어 뒷정리만 (리뷰 $(rounds_done "$REPO" "$NAME")차)"
   else
@@ -133,8 +121,8 @@ else
   fi
 fi
 
-# 제가 서 있는 바닥은 안 지운다. 우산 워크트리가 제 일을 land할 때 실제로 나는
-# 일이고, 지우면 부른 셸의 cwd가 통째로 사라진다.
+# 현재 작업 디렉터리는 삭제하지 않는다. 우산이 자기 변경을 land할 때
+# 워크트리를 삭제하면 호출한 셸의 cwd도 사라진다.
 SELF=0
 case "$PWD/" in "$WT"/*) SELF=1 ;; esac
 if [ "$SELF" = 1 ] && [ "${KEEP:-}" != "1" ] && [ "$PUSHED" != skip ]; then

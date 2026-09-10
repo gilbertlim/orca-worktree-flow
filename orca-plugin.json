@@ -5,7 +5,7 @@
   "publisher": "gilbertlim",
   "name": "Orca Worktree Flow",
   "version": "1.2.1",
-  "description": "워크트리가 생기면 셋업 스크립트를 돌리고, 에이전트가 멈추면 알림을 띄운다.",
+  "description": "Orca 워크트리 작업 관리를 위한 초기 설정과 에이전트 상태 알림",
   "author": {
     "name": "gilbert lim"
   },
@@ -17,7 +17,7 @@
     "commands": [
       {
         "id": "setup",
-        "title": "워크트리 셋업 다시 돌리기",
+        "title": "워크트리 초기 설정 다시 실행",
         "context": "worktree"
       },
       {

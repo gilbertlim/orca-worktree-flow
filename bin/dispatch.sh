@@ -1,28 +1,23 @@
 #!/usr/bin/env bash
-# 레포 하나에 워크트리를 따고 그 안에서 에이전트를 띄운다.
+# 레포에 워크트리를 만들고 에이전트를 실행한다.
 #
 #   dispatch.sh <repo> <worktree-name> <prompt-file>
-#   dispatch.sh --repos [--all]     같은 프로젝트 그룹의 후보 레포를 찍는다
-#
-# 예:
-#   dispatch.sh shared migration-platform-trade /tmp/prompt.md
+#   dispatch.sh --repos [--all]  후보 레포 조회
+#   예: dispatch.sh shared migration-platform-trade /tmp/prompt.md
 #
 # 환경변수:
-#   AGENT_CMD    기본은 설정의 agentCmd, 없으면 "claude --permission-mode auto"
-#   BASE_BRANCH  기본은 그 레포의 설정에 적힌 baseBranch, 없으면 main
-#   NO_SETUP=1   셋업 스크립트를 건너뛴다
-#   ORCA_OWNER   우산을 손으로 지정한다. 기본은 $PWD 에서 알아낸다
+#   AGENT_CMD    설정의 agentCmd, 없으면 "claude --permission-mode auto"
+#   BASE_BRANCH  대상 레포의 baseBranch, 없으면 main
+#   NO_SETUP=1   초기 설정 생략
+#   ORCA_OWNER   우산 지정. 기본은 $PWD에서 확인
 #
-# 우산 워크트리 안에서 부르면 만들어지는 이름 앞에 "<우산레포>.<우산워크트리>." 가
-# 붙는다. 서브 레포 하나를 우산 여럿이 겨눌 때 어느 것이 누구 몫인지 이름만 보고
-# 갈리게 하려는 것이고, status 가 남의 것을 안 찍는 근거도 이 접두다.
+# 우산 안에서 실행하면 <우산레포>.<우산워크트리>. 접두를 붙인다.
+# 같은 서브 레포를 여러 우산이 사용해도 status에서 소속을 구분할 수 있다.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# --repos 는 워크트리를 안 만든다. 어느 레포에 시킬지 고르기 전에 후보를 보는
-# 자리다. 기본은 지금 서 있는 레포와 같은 프로젝트 그룹의 것만이고, 이름과 함께
-# 메인 체크아웃 경로를 준다 -- 오케스트레이터가 각 레포의 CLAUDE.md 를 읽고
-# 담당 경계를 보려면 경로가 있어야 한다.
+# --repos는 워크트리를 만들지 않고 같은 프로젝트 그룹의 후보를 조회한다.
+# 오케스트레이터가 CLAUDE.md에서 담당 범위를 확인할 수 있도록 이름과 경로를 출력한다.
 if [ "${1:-}" = "--repos" ]; then
   shift
   GROUP=""
@@ -38,8 +33,7 @@ fi
 후보 레포를 보려면: dispatch.sh --repos [--all]"
 
 REPO="$1"; NAME="$2"; PROMPT_FILE="$3"
-# 접두가 붙기 전 이름. 터미널 제목은 이것으로 단다 -- 탭이 이미 그 워크트리
-# 안에 앉으므로 레포도 우산도 제목에서는 중복이다.
+# 터미널은 워크트리 안에 있으므로 제목에서 레포와 우산 접두를 생략한다.
 TITLE="$2"
 
 [ -f "$PROMPT_FILE" ] || die "프롬프트 파일이 없다: $PROMPT_FILE"
@@ -63,9 +57,8 @@ WT="$(worktree_path "$REPO" "$NAME")"
 [ -d "$WT" ] && die "이미 있는 워크트리다: $WT
 이어서 붙이려면 review 나 orca terminal create 를 쓴다."
 
-# 셋업을 여기서 동기로 돌린다는 것을 만들기 전에 선언한다. 아래 setup이 끝나야
-# 에이전트가 뜨는 순서가 이 스크립트의 존재 이유이고, 플러그인이 같은 생성
-# 이벤트로 끼어들면 그 순서가 깨진다.
+# 생성 이벤트 전에 claim을 기록해 플러그인의 중복 실행을 막는다.
+# dispatch가 초기 설정을 동기 실행한 뒤 에이전트를 시작하는 순서를 보장한다.
 CLAIM="$(claim_file "$REPO" "$NAME")"
 mkdir -p "$(dirname "$CLAIM")"
 printf '%s' "$$" > "$CLAIM"
@@ -83,8 +76,8 @@ require_worktree "$WT"
 SETUP="$(setup_script)"
 SETUP_ENABLED="$(cfg_get setup.enabled true)"
 if [ "${NO_SETUP:-}" = "1" ] || [ "$SETUP_ENABLED" = "false" ] || [ ! -x "$SETUP" ]; then
-  # 건너뛰라고 했으면 플러그인도 물러서야 한다. claim은 이 스크립트가 끝나면
-  # 사라지므로, 워크트리에 남는 표식으로 바꿔 둔다.
+  # 초기 설정을 생략하면 플러그인도 실행하지 않도록 완료 표식을 남긴다.
+  # claim은 스크립트 종료 시 삭제되므로 이 표식으로 생략 상태를 유지한다.
   [ -x "$SETUP" ] || printf '셋업 스크립트가 없거나 실행 권한이 없다: %s\n' "$SETUP" >&2
   date -u '+%Y-%m-%dT%H:%M:%SZ' \
     > "$(git -C "$WT" rev-parse --absolute-git-dir)/worktree-setup.done" 2>/dev/null || true
@@ -93,24 +86,23 @@ else
   RC=0
   "$SETUP" "$WT" || RC=$?
   if [ "$RC" = 75 ]; then
-    # 75는 실패가 아니라 남이 잡고 있다는 뜻이다. 끝날 때까지 기다리고,
-    # 그쪽이 성공했는지는 표식으로 본다. 남의 종료 코드는 우리가 못 본다.
-    printf '  다른 실행이 셋업을 잡고 있다. 끝나기를 기다린다.\n'
+    # 75는 다른 실행이 잠금을 보유했다는 뜻이다. 종료를 기다린 뒤 완료 표식을 확인한다.
+    # 다른 프로세스의 종료 코드는 직접 읽을 수 없다.
+    printf '  다른 실행이 셋업을 실행 중이다. 완료를 기다린다.\n'
     wait_for_setup "$WT"
     [ -f "$(git -C "$WT" rev-parse --absolute-git-dir)/worktree-setup.done" ] || RC=1
   fi
   if [ "$RC" != 0 ] && [ "$RC" != 75 ]; then
-    printf '  셋업이 깨끗하게 끝나지 않았다. 빌드 전에 손으로 확인한다.\n' >&2
-    # 카드에도 남긴다. 아래에서 곧 "에이전트 투입"을 쓰므로, 여기서 안 남기면
-    # 빌드가 깨진 워크트리가 카드에도 status에도 멀쩡한 얼굴로 앉는다.
-    card "$WT" "" "셋업 실패 -- 빌드 전에 손으로 확인한다"
+    printf '  셋업이 완료되지 않았다. 빌드 전에 직접 확인한다.\n' >&2
+    # 초기 설정 실패를 카드에 기록한다. 에이전트 시작 문구에도 실패를 포함해야
+    # 빌드할 수 없는 상태가 정상으로 표시되지 않는다.
+    card "$WT" "" "셋업 실패 -- 빌드 전에 직접 확인한다"
     SETUP_FAILED=1
   fi
 fi
 
 printf '에이전트를 띄운다: %s\n' "$AGENT_CMD"
-# 프롬프트 파일을 그대로 넘기지 않고 카드 지시를 붙여 임시 파일로 만든다.
-# 오케스트레이터가 프롬프트마다 그 지시를 기억해 넣게 두면 빠지는 날이 온다.
+# 카드 갱신 지시가 누락되지 않도록 프롬프트에 자동 추가하고 임시 파일로 저장한다.
 TMP="$(mktemp -t orca-dispatch)"
 { cat "$PROMPT_FILE"; card_rule "$WT"; } > "$TMP"
 
@@ -120,28 +112,26 @@ H="$(orca terminal create \
   --command "$AGENT_CMD \"\$(cat '$TMP')\"" \
   --json 2>&1 | terminal_handle)"
 
-# 핸들을 기억해 둔다. 리뷰 결과를 되돌릴 때 이 터미널을 다시 찾아야 하는데,
-# 에이전트가 탭 제목을 자기 마음대로 바꿔서 제목으로는 못 찾는다.
-# 카드는 붙은 뒤에 찍는다. 먼저 찍으면 터미널이 안 떠도 카드는 투입됐다고 말한다.
-# 셋업이 깨졌으면 그 사실을 투입 줄에 실어 보낸다. card는 필드를 통째로 덮으므로
-# 앞에서 남긴 실패 줄이 여기서 지워진다.
+# 수정 요청에 사용할 터미널 핸들을 저장한다. 탭 제목은 에이전트가 바꿀 수 있다.
+# 터미널 생성 후 카드를 갱신해 실제 시작 여부를 반영한다.
+# 카드는 전체를 덮어쓰므로 초기 설정 실패도 시작 문구에 포함한다.
 NOTE=""
 if [ "${SETUP_FAILED:-0}" = 1 ]; then
-  NOTE=" -- 셋업 실패, 빌드 전에 손으로 확인한다"
+  NOTE=" -- 셋업 실패, 빌드 전에 직접 확인한다"
 fi
 
 if [ -n "$H" ]; then
   save_handle "$REPO" "$NAME" work "$H"
-  card "$WT" in-progress "에이전트 투입$NOTE"
+  card "$WT" in-progress "에이전트 시작$NOTE"
 else
-  card "$WT" in-progress "에이전트가 안 붙었다 -- Orca에서 탭을 본다$NOTE"
+  card "$WT" in-progress "에이전트 시작 실패 -- Orca에서 탭 확인$NOTE"
 fi
 
 journal "dispatch $REPO/$NAME -- $(head -1 "$PROMPT_FILE" | cut -c1-80)"
 
 printf '\n경로   %s\n' "$WT"
-# Orca가 브랜치에 git 사용자명을 앞에 붙이는 일이 있어(gilbertim/<이름>) 워크트리
-# 이름과 안 맞는다. 짐작하지 않고 워크트리에 직접 묻는다.
+# Orca가 브랜치 앞에 Git 사용자명(gilbertim/<이름>)을 붙일 수 있으므로
+# 워크트리에서 실제 브랜치 이름을 읽는다.
 printf '브랜치 %s\n' "$(git -C "$WT" branch --show-current 2>/dev/null || printf '%s' "$NAME")"
 printf '진행   %s/bin/status.sh\n' "$PLUGIN_ROOT"
 printf '리뷰   %s/bin/review.sh %s %s\n' "$PLUGIN_ROOT" "$REPO" "$NAME"

@@ -1,22 +1,22 @@
 {
   "$comment": [
-    "프로젝트 루트에 .orca-flow.json 으로 복사해 쓴다.",
-    "전부 선택이라 빈 객체 {} 로 두어도 돈다. 아래는 기본값 그대로이므로 다른 것만 고치면 된다.",
-    "키 전체와 예시는 플러그인 README 의 '설정' 절에 있다.",
-    "${projectRoot} 는 이 파일이 있는 디렉터리로 바뀐다. 절대 경로를 적지 않아도 되게 하려는 것이고,",
-    "그래서 이 파일을 커밋해도 남의 머신에서 그대로 돈다."
+    "프로젝트 루트에 .orca-flow.json으로 복사한다.",
+    "모든 항목은 선택 사항이며 빈 객체 {}도 사용할 수 있다. 변경할 값만 수정한다.",
+    "전체 키와 예시는 플러그인 README의 설정 항목을 참고한다.",
+    "${projectRoot}는 이 파일이 있는 디렉터리로 치환된다.",
+    "개발자별 절대 경로 없이 설정 파일을 공유할 수 있다."
   ],
 
   "baseBranch": "main",
   "agentCmd": "claude --permission-mode auto",
 
   "review": {
-    "$comment": "리뷰 왕복 상한. 넘으면 review.sh 가 남은 blocking 을 찍고 멈춘다.",
+    "$comment": "리뷰 횟수 상한. 초과하면 review.sh가 남은 blocking을 출력하고 중단한다.",
     "maxRounds": 5
   },
 
   "setup": {
-    "$comment": "새 워크트리에 메인 체크아웃에서 채워 넣을 것. gitignore돼 있지만 없으면 빌드가 안 되는 것들이다.",
+    "$comment": "메인 체크아웃에서 새 워크트리로 복사할 항목. Git 추적 대상은 아니지만 빌드에 필요한 파일이다.",
     "files": ["*-local-mine.yaml", ".env", ".env.local", ".env.local-mine", ".env.*.local"],
     "dirs": [],
     "repoExtras": {},
