@@ -25,7 +25,7 @@
 /plugin install orca@orca-worktree-flow
 ```
 
-**Orca 앱 쪽.** 설정 → Plugins → 마켓플레이스 소스에서 Git URL로 `https://github.com/gilbertlim/orca-worktree-flow`, ref로 `main`을 준다. 소스가 읽는 것은 루트의 `orca-marketplace.json`이고, 그 안에서 플러그인 자체는 태그(`v1.2.0`)에 고정돼 있다. `main`을 소스 ref로 두는 것은 새 판을 낼 때 마켓플레이스 파일만 고치면 되게 하려는 것이다.
+**Orca 앱 쪽.** 설정 → Plugins → 마켓플레이스 소스에서 Git URL로 `https://github.com/gilbertlim/orca-worktree-flow`, ref로 `main`을 준다. 소스가 읽는 것은 루트의 `orca-marketplace.json`이고, 그 안에서 플러그인 자체는 태그(`v1.2.1`)에 고정돼 있다. `main`을 소스 ref로 두는 것은 새 판을 낼 때 마켓플레이스 파일만 고치면 되게 하려는 것이다.
 
 로컬 경로로 붙이려면 클론한 뒤 설정 → Plugins → Installed에서 그 디렉터리를 지정한다.
 

@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Orca 워크트리로 갈라 병렬로 돌리는 절차. Claude Code 플러그인과 Orca 앱 플러그인이 한 레포에 있다.",
-    "version": "1.2.0"
+    "version": "1.2.1"
   },
   "plugins": [
     {
