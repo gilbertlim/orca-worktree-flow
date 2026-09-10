@@ -447,11 +447,15 @@ else:
 # "## blocking" 절만 떼어 낸다. 다음 같은 수준 제목에서 끊는 것이 핵심이다 --
 # 안 끊으면 뒤에 오는 non-blocking 절까지 통째로 딸려 나온다.
 # non-blocking 은 제목이 "blocking" 으로 시작하지 않아 여는 조건에 안 걸린다.
-blocking_section() { # review-file
-  awk '
-    tolower($0) ~ /^#+[ \t]*blocking/ { p = 1; print; next }
+# 자를 줄 수는 awk 가 직접 센다. 밖에서 `| head -N` 로 자르면 절이 그보다 길
+# 때 awk 가 SIGPIPE(141)로 죽고, lib.sh 의 pipefail + set -e 가 부른 쪽 스크립트를
+# 에러 한 줄 없이 끝낸다. 절이 짧으면 파이프 버퍼에 다 들어가 안 걸려서, 판정
+# 길이에 따라 되기도 하고 안 되기도 했다.
+blocking_section() { # review-file [max-lines]
+  awk -v max="${2:-0}" '
+    tolower($0) ~ /^#+[ \t]*blocking/ { p = 1; print; n++; next }
     p && /^##[^#]/ { exit }
-    p { print }
+    p { if (max && ++n > max) exit; print }
   ' "$1"
 }
 

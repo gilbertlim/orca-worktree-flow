@@ -263,7 +263,7 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   printf '%-40s %-6s %-7s %-14s %s\n' "$repo/$name" "$ahead" "$dirty" "$review" "$term"
 
   # 카드 줄은 표에 넣지 않고 아래에 붙인다. 길이가 제각각이라 칸에 넣으면 정렬이 무너진다.
-  cline="$(printf '%s\n' "$CARDS" | awk -F'\t' -v p="$dir" '$1==p {print "["$2"] "$3}' | head -1)"
+  cline="$(printf '%s\n' "$CARDS" | awk -F'\t' -v p="$dir" '$1==p && !seen {print "["$2"] "$3; seen=1}')"
   if [ -n "$cline" ]; then
     printf '%-40s %s\n' "" "└ ${cline}"
   fi

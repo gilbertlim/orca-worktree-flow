@@ -79,7 +79,7 @@ elif [ ! -f "$RF" ]; then
 else
   printf '\n리뷰 판정 (%s) -- blocking %s건\n' "$RF" "$(blocking_count "$RF")"
   # 앞의 -- 를 printf 형식으로 두면 옵션으로 먹힌다.
-  blocking_section "$RF" | head -20
+  blocking_section "$RF" 20
   printf '%s\n\n' "위 판정이 닫힌 것이 맞는지 보고 진행한다"
 fi
 

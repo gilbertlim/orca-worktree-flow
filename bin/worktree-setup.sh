@@ -122,7 +122,7 @@ TARGET="$(git -C "$WANTED" rev-parse --show-toplevel 2>/dev/null)" \
 # 레포마다 경로를 적어 둘 필요가 없다. 레포가 늘어도 이 스크립트는 그대로다.
 # --porcelain은 경로를 인용하지 않으므로 awk로 자르면 공백에서 끊긴다.
 WT_LIST="$(git -C "$TARGET" worktree list --porcelain)"
-SOURCE="$(printf '%s\n' "$WT_LIST" | sed -n 's/^worktree //p' | head -1)"
+SOURCE="$(printf '%s\n' "$WT_LIST" | awk '/^worktree / && !seen {sub(/^worktree /, ""); print; seen=1}')"
 [[ -n "$SOURCE" && -d "$SOURCE" ]] || die "cannot resolve the main worktree for: $TARGET"
 
 # bare 클론이면 첫 항목이 작업 트리가 아니라 bare 레포다. 복사할 원본이 없다.

@@ -31,7 +31,7 @@ require_worktree "$WT"
 # 기준 브랜치는 그 레포 것으로 정한다. status, dispatch, land 와 같은 함수다.
 BASE="$(base_branch_for "$REPO")"
 
-DIRTY="$(git -C "$WT" status --porcelain | head -5)"
+DIRTY="$(git -C "$WT" status --porcelain | awk 'NR <= 5')"
 if [ -n "$DIRTY" ]; then
   printf '작업 트리가 깨끗하지 않다. 리뷰가 도는 동안 diff가 바뀌면 판정이 실제로 커밋될 것과 달라진다.\n' >&2
   printf '%s\n' "$DIRTY" >&2
@@ -58,7 +58,7 @@ if [ "$ROUND" -gt "$MAX_ROUNDS" ] && [ "${FORCE:-}" != "1" ]; then
   printf '리뷰 %s차다. 상한 %s차를 넘었다.\n' "$ROUND" "$MAX_ROUNDS" >&2
   if [ -f "$OUT" ]; then
     printf '\n남은 판정 (%s) -- blocking %s건\n' "$OUT" "$(blocking_count "$OUT")" >&2
-    blocking_section "$OUT" | head -20 >&2
+    blocking_section "$OUT" 20 >&2
   fi
   printf '\n왕복을 더 쓸 값인지 사람이 판단한다.\n' >&2
   printf '  계속 돌린다   FORCE=1 %s/bin/review.sh %s %s\n' "$PLUGIN_ROOT" "$REPO" "$NAME" >&2
