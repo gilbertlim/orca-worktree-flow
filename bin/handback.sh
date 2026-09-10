@@ -20,7 +20,7 @@ require_worktree "$WT"
 [ -f "$FILE" ] || die "리뷰 결과 파일이 없다: $FILE
 리뷰가 아직 안 끝났거나 파일로 안 남겼다. review.sh 로 돌린다."
 
-BLOCKING="$(grep -ciE '^#+ *blocking|^\*\*blocking' "$FILE" || true)"
+BLOCKING="$(blocking_count "$FILE")"
 printf '%s/%s 에 리뷰 결과를 넘긴다 (%s)\n' "$REPO" "$NAME" "$FILE"
 
 MSG="리뷰 결과가 $FILE 에 있다. 읽고 blocking을 고쳐라.
@@ -54,7 +54,7 @@ else
   } > "$TMP"
   H="$(orca terminal create \
     --worktree "path:$WT" \
-    --title "$REPO/$NAME" \
+    --title "$(short_name "$NAME")" \
     --command "$AGENT_CMD \"\$(cat '$TMP')\"" \
     --json 2>&1 | terminal_handle)"
   [ -n "$H" ] && save_handle "$REPO" "$NAME" work "$H"
@@ -68,5 +68,7 @@ if [ "${BLOCKING:-0}" -gt 0 ]; then
 else
   card "$WT" in-progress "재작업 -- 리뷰 지적 반영"
 fi
+
+journal "handback $REPO/$NAME -- blocking ${BLOCKING:-0}건"
 
 printf '\n고치고 커밋되면 재리뷰: %s/bin/review.sh %s %s\n' "$PLUGIN_ROOT" "$REPO" "$NAME"

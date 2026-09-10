@@ -567,6 +567,9 @@ function summaryBody(counts) {
     counts.review_none ? `리뷰 안 함 ${counts.review_none}` : ''
   ].filter(Boolean)
   const work = [
+    // 승인 대기가 맨 앞이다. 나머지는 나중에 봐도 되지만 이건 사람이 답할 때까지
+    // 그 워크트리가 통째로 멈춰 있는 것이다.
+    counts.blocked ? `승인 대기 ${counts.blocked}` : '',
     counts.dirty ? `미커밋 ${counts.dirty}` : '',
     counts.no_terminal ? `터미널 없음 ${counts.no_terminal}` : ''
   ].filter(Boolean)
