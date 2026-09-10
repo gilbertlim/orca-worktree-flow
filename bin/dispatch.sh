@@ -2,6 +2,7 @@
 # 레포 하나에 워크트리를 따고 그 안에서 에이전트를 띄운다.
 #
 #   dispatch.sh <repo> <worktree-name> <prompt-file>
+#   dispatch.sh --repos [--all]     같은 프로젝트 그룹의 후보 레포를 찍는다
 #
 # 예:
 #   dispatch.sh shared migration-platform-trade /tmp/prompt.md
@@ -18,7 +19,23 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-[ $# -ge 3 ] || die "사용법: dispatch.sh <repo> <worktree-name> <prompt-file>"
+# --repos 는 워크트리를 안 만든다. 어느 레포에 시킬지 고르기 전에 후보를 보는
+# 자리다. 기본은 지금 서 있는 레포와 같은 프로젝트 그룹의 것만이고, 이름과 함께
+# 메인 체크아웃 경로를 준다 -- 오케스트레이터가 각 레포의 CLAUDE.md 를 읽고
+# 담당 경계를 보려면 경로가 있어야 한다.
+if [ "${1:-}" = "--repos" ]; then
+  shift
+  GROUP=""
+  [ "${1:-}" = "--all" ] || GROUP="$(current_group)"
+  repo_paths | awk -F'\t' -v g="$GROUP" '
+    $1 == "" { next }
+    g == "" || $3 == g { printf "%s\t%s\n", $1, $2 }
+  '
+  exit 0
+fi
+
+[ $# -ge 3 ] || die "사용법: dispatch.sh <repo> <worktree-name> <prompt-file>
+후보 레포를 보려면: dispatch.sh --repos [--all]"
 
 REPO="$1"; NAME="$2"; PROMPT_FILE="$3"
 # 접두가 붙기 전 이름. 터미널 제목은 이것으로 단다 -- 탭이 이미 그 워크트리

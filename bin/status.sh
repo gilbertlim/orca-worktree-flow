@@ -5,6 +5,7 @@
 #   status.sh --all        우산과 상관없이 전부
 #   status.sh shared       한 레포만
 #   status.sh --summary    표 끝에 세어 둔 값을 기계가 읽을 꼴로 덧붙인다
+#   status.sh --wait       사람이 부를 마디가 설 때까지 기다렸다가 그때 한 번 찍는다
 #
 # 기본이 "제 것만"인 이유는, 서브 레포 하나를 우산 여럿이 겨눌 수 있어서다.
 # 남의 워크트리가 표에 섞이면 다음 마디를 남의 것에 대고 부르게 된다.
@@ -18,12 +19,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SUMMARY=0
 ALL=0
+WAIT=0
 FILTER=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --summary) SUMMARY=1; ALL=1 ;;
     --all) ALL=1 ;;
     --mine) ALL=0 ;;
+    --wait) WAIT=1 ;;
     *) FILTER="$1" ;;
   esac
   shift
@@ -41,6 +44,42 @@ mine() { # repo name
   return 1
 }
 
+# --wait 는 사람이 부를 마디가 설 때까지 자고, 그때 깨어나 아래 표를 한 번 찍는다.
+#
+# 오케스트레이터가 status 를 반복해서 치는 대신 이것을 background 로 걸어 둔다.
+# 사람에게 폴링을 시키지 않으려는 것이고, 깨어날 자리는 결국 승인이 필요한
+# 자리 넷뿐이다 -- 리뷰를 돌릴 것이 섰다, 판정에 blocking 이 남았다, 전부
+# 닫혔다, 에이전트가 사람 손에 막혔다.
+#
+# 세는 것은 제 자신을 --summary 로 다시 불러서 한다. 표를 그리는 코드를 두 벌
+# 두지 않으려는 것이고, --mine 을 함께 주는 것은 --summary 가 ALL=1 을 켜기
+# 때문이다(앱 플러그인이 우산 없이 부르는 자리라 그렇게 돼 있다).
+WAKE=""
+if [ "$WAIT" = 1 ]; then
+  [ -n "$OWNER" ] || die "--wait 는 우산 워크트리 안에서만 쓴다. 지금은 우산이 안 잡힌다."
+  interval="${WAIT_INTERVAL:-60}"
+  limit="${WAIT_TIMEOUT:-14400}"
+  waited=0
+  while :; do
+    counts="$("$0" --summary --mine ${FILTER:+"$FILTER"} 2>/dev/null | sed -n '/^--- counts$/,$p')"
+    c_of() { printf '%s\n' "$counts" | awk -F= -v k="$1" '$1 == k { print $2 + 0; exit }'; }
+    owned="$(c_of owned)"; blocked="$(c_of blocked)"
+    ready="$(c_of review_ready)"; hb="$(c_of handback)"; closed="$(c_of closed)"
+
+    if   [ "${owned:-0}" = 0 ];        then WAKE="낸 워크트리가 없다"
+    elif [ "${blocked:-0}" != 0 ];     then WAKE="에이전트 ${blocked}개가 사람 손을 기다린다"
+    elif [ "${ready:-0}" != 0 ];       then WAKE="리뷰를 돌릴 워크트리 ${ready}개"
+    elif [ "${hb:-0}" != 0 ];          then WAKE="blocking 이 남은 워크트리 ${hb}개"
+    elif [ "$owned" = "${closed:-0}" ]; then WAKE="내가 낸 ${owned}개가 전부 닫혔다"
+    elif [ "$waited" -ge "$limit" ];   then WAKE="${limit}초를 기다렸다 -- 아직 도는 중이다"
+    fi
+    [ -z "$WAKE" ] || break
+    sleep "$interval"
+    waited=$((waited + interval))
+  done
+  printf '▶ 깨어났다: %s (%s초 기다림)\n\n' "$WAKE" "$waited"
+fi
+
 # --summary 일 때만 찍는다. 표 뒤에 붙으므로 사람이 그냥 부르면 안 보인다.
 emit_counts() {
   [ "$SUMMARY" = 1 ] || return 0
@@ -52,6 +91,8 @@ emit_counts() {
   printf 'no_terminal=%s\n' "${n_idle:-0}"
   printf 'blocked=%s\n' "${n_blocked:-0}"
   printf 'owned=%s\n' "${n_owned:-0}"
+  printf 'review_ready=%s\n' "${n_ready:-0}"
+  printf 'handback=%s\n' "${n_handback:-0}"
   printf 'closed=%s\n' "${n_closed:-0}"
   printf 'self_ahead=%s\n' "${self_ahead:-0}"
 }
@@ -60,6 +101,8 @@ emit_counts() {
 # 오케스트레이터가 앉아 있는 자리라 늘 더럽고, 섞으면 서브 레포가 다 닫혀도
 # "전부 닫혔다"가 영영 안 뜬다.
 n_owned=0
+n_ready=0
+n_handback=0
 n_closed=0
 
 # 우산 자신은 따로 본다. 빼 두기만 하면 우산이 제 손으로 짠 것은 아무도 안 묻고,
@@ -189,10 +232,23 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
     *)
       if [ -n "$OWNER" ]; then
         n_owned=$((n_owned + 1))
-        if [ "${dirty:-0}" = 0 ] && [ "${ahead:-0}" != 0 ] && [ "${ahead:-?}" != '?' ] \
-           && [ -f "$rf" ] && [ "$review" = "${rounds}차" ] \
-           && [ "$(blocking_count "$rf")" = 0 ]; then
-          n_closed=$((n_closed + 1))
+        # 다음에 무엇을 부를 값인지로 가른다 -- review, handback, land 셋이다.
+        # --wait 가 이 셋 중 하나가 서면 깨어난다. 미커밋이 남아 있거나 커밋이
+        # 아직 없으면 셋 다 아니다 -- 에이전트가 일하는 중이라 부를 것이 없다.
+        if [ "${dirty:-0}" = 0 ] && [ "${ahead:-0}" != 0 ] && [ "${ahead:-?}" != '?' ]; then
+          case "$review" in
+            # 리뷰어가 도는 중이다. 판정이 떨어질 때까지는 부를 것이 없다.
+            *중) ;;
+            "안 함"|*낡음) n_ready=$((n_ready + 1)) ;;
+            # 여기 오면 판정이 있고 커밋보다 새것이다. blocking 이 갈림길이다.
+            *)
+              if [ "$(blocking_count "$rf")" = 0 ]; then
+                n_closed=$((n_closed + 1))
+              else
+                n_handback=$((n_handback + 1))
+              fi
+              ;;
+          esac
         fi
       fi
       ;;
@@ -236,6 +292,15 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   [ -n "$log" ] || continue
   printf '=== %s/%s\n%s\n\n' "$repo" "$name" "$log"
 done
+
+# 승인이 필요한 마디를 그대로 짚어 준다. --wait 가 깨어나는 조건과 같은 셈이라,
+# 백그라운드로 걸어 두든 사람이 직접 치든 같은 문장을 본다.
+if [ "${n_ready:-0}" -gt 0 ]; then
+  printf '▶ 리뷰를 돌릴 워크트리 %s개. /orca:review 를 부를지 사람에게 묻는다.\n\n' "$n_ready"
+fi
+if [ "${n_handback:-0}" -gt 0 ]; then
+  printf '▶ 판정에 blocking 이 남은 워크트리 %s개. /orca:handback 이다.\n\n' "$n_handback"
+fi
 
 # 다 닫혔으면 그것을 말해 준다. 표만 찍고 말면 오케스트레이터가 계속 폴링하거나
 # 혼자 land해 버린다. 무엇을 할지는 여기서 안 정하고 사람에게 넘긴다 --

@@ -13,7 +13,7 @@
 ## 전제
 
 - **Orca 앱과 `orca` CLI.** 스크립트 실행에 필요하다.
-- **레포가 Orca에 등록돼 있어야 한다.** 스크립트는 레포를 경로가 아니라 등록된 displayName으로 받는다. `orca repo list --json`으로 확인한다.
+- **레포가 Orca에 등록돼 있어야 한다.** 스크립트는 레포를 경로가 아니라 등록된 displayName으로 받는다. `bin/dispatch.sh --repos`로 확인한다.
 - `git`, `python3`, `bash`. python3는 표준 라이브러리만 쓴다.
 
 ## 설치
@@ -54,6 +54,39 @@ git clone git@github.com:gilbertlim/orca-plugin.git ~/orca-plugin
 
 **한 우산 워크트리에서는 기능 하나만 다룬다.** 서브 레포가 많을수록 오케스트레이터의 컨텍스트가 빨리 차고, 요약 과정에서 결정과 근거가 누락된다. 두 번째 기능은 우산 레포에 워크트리를 새로 따서 거기서 시작한다. 이미 떠 있는 서브 워크트리는 그대로 두면 되고, 새 우산은 제 접두가 붙은 것만 보므로 겹쳐 만질 일이 없다.
 
+## 어느 레포에 시킬지, 이름을 무엇으로 할지
+
+`dispatch.sh --repos`가 **지금 서 있는 레포와 같은 Orca 프로젝트 그룹**의 레포만 `이름<TAB>메인 체크아웃 경로`로 찍는다. 한 머신에 무관한 프로젝트가 여럿 등록돼 있어도 후보가 그 프로젝트 안으로 좁혀진다. 그룹은 Orca가 이미 들고 있는 값(`orca repo list`의 `projectGroupId`)이라 따로 적을 것이 없고, 그룹에 안 넣은 레포에서 부르면 거르지 않는다.
+
+```
+$ bin/dispatch.sh --repos
+orca-plugin           /Users/me/dev/orca-plugin
+orca-plugin-sub-repo  /Users/me/dev/orca-plugin-sub-repo
+```
+
+경로를 함께 주는 것은 오케스트레이터가 각 레포의 `CLAUDE.md`를 읽고 담당 경계를 봐야 하기 때문이다. 그것으로 안 갈리면 작업 설명의 도메인 용어를 후보 레포에서 `grep`한다. 그래도 둘 이상 남으면 근거와 함께 사람에게 고르게 한다. 그룹 밖까지 봐야 하면 `--repos --all`이다.
+
+**워크트리 이름은 `<동작>-<대상>` 케밥케이스 2~4단어다.**
+
+```
+우산:  orca-plugin/login-refactor              기능 전체
+서브:  orca-plugin-sub-repo/orca-plugin.login-refactor.auth-api   그 레포가 맡는 몫
+탭:    auth-api
+```
+
+서브 이름에 기능 이름을 다시 넣지 않는다. 접두에 이미 들어 있다. 레포 이름도 안 넣는다. 경로 앞칸이 이미 레포다. 브랜치 이름은 짓지 않는다 — Orca가 워크트리 이름에서 만들고 git 사용자명을 앞에 붙이는 일이 있다.
+
+## 기다릴 때는 status를 반복해 치지 않는다
+
+`status.sh --wait`를 백그라운드로 걸어 두면 사람이 부를 마디가 설 때까지 자다가 그때 깨어나 표를 한 번 찍는다. 깨어나는 조건은 넷이다 — 리뷰를 돌릴 워크트리가 섰다, 판정에 blocking이 남았다, 내가 낸 것이 전부 닫혔다, 에이전트가 사람 손에 막혔다.
+
+```
+▶ 깨어났다: 리뷰를 돌릴 워크트리 2개 (180초 기다림)
+```
+
+기본 주기는 60초, 상한은 4시간이고 `WAIT_INTERVAL=`, `WAIT_TIMEOUT=`으로 바꾼다. 우산 워크트리 안에서만 돈다 — 밖에서는 누구 것을 기다릴지가 안 정해진다. <br>
+깨어난 뒤 다음 단계를 혼자 부르지는 않는다. 무엇 때문에 깨어났는지를 전하고 사람에게 확인받는다.
+
 ## 한 사이클
 
 우산 워크트리 안에서 슬래시 커맨드로 하면 이렇다.
@@ -88,13 +121,14 @@ handback과 review는 blocking이 없어질 때까지 돌되 상한이 있다. �
 | 스크립트 | 하는 일 |
 |----------|---------|
 | `dispatch.sh <repo> <name> <prompt-file>` | 워크트리를 만들고, gitignore된 파일을 메인 체크아웃에서 채우고, 에이전트를 띄운다 |
+| `dispatch.sh --repos [--all]` | 같은 프로젝트 그룹의 후보 레포를 이름과 메인 체크아웃 경로로 찍는다. 워크트리는 안 만든다 |
 | `review.sh <repo> <name> [prompt-file]` | 그 워크트리 안에 리뷰어를 띄운다. 이미 떠 있으면 새로 안 띄우고 재리뷰를 시킨다 |
 | `handback.sh <repo> <name> [review-file]` | 리뷰 결과를 작업 에이전트에게 되돌려 고치게 한다. 죽었으면 새로 띄운다 |
-| `status.sh [repo\|--all]` | 워크트리별 커밋 수, 미커밋 수, 리뷰 라운드, 터미널 상태(돎/막힘/쉼), 카드에 적힌 줄. 우산 워크트리 안이면 제 것만 |
+| `status.sh [repo\|--all\|--wait]` | 워크트리별 커밋 수, 미커밋 수, 리뷰 라운드, 터미널 상태(돎/막힘/쉼), 카드에 적힌 줄. 우산 워크트리 안이면 제 것만. `--wait`는 부를 마디가 설 때까지 기다렸다 찍는다 |
 | `land.sh <repo> <name>` | 리뷰 판정을 찍어 보이고 `--no-ff`로 머지, push까지 한 뒤 워크트리를 지운다 |
 | `worktree-setup.sh [path]` | 새 워크트리에 gitignore된 파일을 메인 체크아웃에서 채운다. dispatch가 자동으로 부른다 |
 
-환경변수로 동작을 조정할 수 있다. `AGENT_CMD`, `BASE_BRANCH`, `NO_SETUP=1`, `KEEP=1`, `NO_PUSH=1`, `FORCE=1`, `NOTE`(handback에 실을 메모), `NEW=1`(리뷰어를 새로 띄운다), `MAX_ROUNDS`(리뷰 상한), `ORCA_OWNER`(우산을 손으로 지정한다)이다.
+환경변수로 동작을 조정할 수 있다. `AGENT_CMD`, `BASE_BRANCH`, `NO_SETUP=1`, `KEEP=1`, `NO_PUSH=1`, `FORCE=1`, `NOTE`(handback에 실을 메모), `NEW=1`(리뷰어를 새로 띄운다), `MAX_ROUNDS`(리뷰 상한), `ORCA_OWNER`(우산을 손으로 지정한다), `WAIT_INTERVAL`과 `WAIT_TIMEOUT`(`--wait`의 주기와 상한)이다.
 
 ## 리뷰 왕복에는 상한이 있다
 
