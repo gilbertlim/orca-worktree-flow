@@ -29,6 +29,13 @@ DIRTY="$(git -C "$WT" status --porcelain)"
 [ -z "$DIRTY" ] || die "워크트리에 미커밋 변경이 남아 있다. 커밋하거나 버린 뒤 다시 부른다.
 $DIRTY"
 
+# 메인 체크아웃이 기준 브랜치에 앉아 있는지를 먼저 본다. 아래 rev-list 가
+# "$BASE" 를 쓰는데, 기준 브랜치가 origin 에만 있는 레포에서는 그것이 git 의
+# fatal 만 남기고 128로 끊긴다. 이 검사가 위에 있으면 그 자리에 사람이 읽을
+# 문장이 나오고, rev-list 는 브랜치가 있는 것이 보장된 뒤에 돈다.
+CUR="$(git -C "$MAIN" branch --show-current)"
+[ "$CUR" = "$BASE" ] || die "메인 체크아웃이 $BASE 가 아니라 $CUR 에 있다. 옮긴 뒤 다시 부른다."
+
 # 머지가 이미 끝난 워크트리도 여기로 온다. push가 한 번 실패했거나, 사람이
 # 손으로 머지했거나, KEEP=1 로 남겨 둔 것을 나중에 치우는 자리다. 그때
 # "머지할 것이 없다"로 죽으면 뒷정리를 할 마디가 아예 없다.
@@ -60,9 +67,6 @@ else
   blocking_section "$RF" | head -20
   printf '%s\n\n' "위 판정이 닫힌 것이 맞는지 보고 진행한다"
 fi
-
-CUR="$(git -C "$MAIN" branch --show-current)"
-[ "$CUR" = "$BASE" ] || die "메인 체크아웃이 $BASE 가 아니라 $CUR 에 있다. 옮긴 뒤 다시 부른다."
 
 # 메인 체크아웃은 다른 세션이 함께 만지므로, 남의 미커밋 변경이 있으면 알리고 멈춘다.
 OTHER="$(git -C "$MAIN" status --porcelain)"
