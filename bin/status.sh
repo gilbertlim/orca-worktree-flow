@@ -53,12 +53,19 @@ emit_counts() {
   printf 'blocked=%s\n' "${n_blocked:-0}"
   printf 'owned=%s\n' "${n_owned:-0}"
   printf 'closed=%s\n' "${n_closed:-0}"
+  printf 'self_ahead=%s\n' "${self_ahead:-0}"
 }
 
-# 우산이 낸 워크트리 중 몇 개가 닫혔나. 우산 자신은 안 센다 -- 오케스트레이터가
-# 앉아 있는 자리라 늘 더럽고, 그것 때문에 "다 닫혔다"가 영영 안 뜬다.
+# 우산이 낸 워크트리 중 몇 개가 닫혔나. 우산 자신은 이 셈에 안 넣는다 --
+# 오케스트레이터가 앉아 있는 자리라 늘 더럽고, 섞으면 서브 레포가 다 닫혀도
+# "전부 닫혔다"가 영영 안 뜬다.
 n_owned=0
 n_closed=0
+
+# 우산 자신은 따로 본다. 빼 두기만 하면 우산이 제 손으로 짠 것은 아무도 안 묻고,
+# 실제로 그래서 사람이 세 번을 먼저 밀었다.
+self_ahead=0
+self_dirty=0
 
 n_total=0
 n_stale=0
@@ -154,7 +161,10 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   # 닫힘: 커밋이 서 있고, 미커밋이 없고, 판정이 최신이고, blocking이 0.
   # 넷 다 맞아야 land를 물을 값이다.
   case "$repo.$name" in
-    "$OWNER") ;;
+    "$OWNER")
+      self_ahead="${ahead:-0}"
+      self_dirty="${dirty:-0}"
+      ;;
     *)
       if [ -n "$OWNER" ]; then
         n_owned=$((n_owned + 1))
@@ -212,6 +222,14 @@ if [ "${n_owned:-0}" -gt 0 ] && [ "$n_owned" = "$n_closed" ]; then
   printf '  진척을 기록하고 land할지 사람에게 묻는다.\n\n'
 elif [ "${n_closed:-0}" -gt 0 ]; then
   printf '▶ %s개 중 %s개가 닫혔다. 나머지가 끝나면 land를 묻는다.\n\n' "$n_owned" "$n_closed"
+fi
+
+# 우산이 제 손으로 짠 것. 서브 레포와 조건이 다르다 -- 리뷰를 안 거치는 자리라
+# 판정 파일을 안 보고, 미커밋이 없고 기준 브랜치보다 앞서 있으면 물을 값이다.
+if [ -n "$OWNER" ] && [ "${self_ahead:-0}" != 0 ] && [ "${self_ahead:-?}" != '?' ] \
+   && [ "${self_dirty:-0}" = 0 ]; then
+  printf '▶ 이 우산 워크트리에도 %s 앞에 커밋 %s개가 서 있다.\n' "$BASE_BRANCH" "$self_ahead"
+  printf '  land할지 사람에게 묻는다. 이 워크트리 안에서 부르면 지우지 않고 머지와 push만 한다.\n\n'
 fi
 
 # 카드도 커밋도 못 드는 것 -- 무엇을 왜 그렇게 했는지 -- 이 파일에 쌓인다.
