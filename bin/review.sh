@@ -28,6 +28,9 @@ REPO="$1"; NAME="$2"; PROMPT_FILE="${3:-}"
 WT="$(worktree_path "$REPO" "$NAME")"
 require_worktree "$WT"
 
+# 기준 브랜치는 그 레포 것으로 정한다. status, dispatch, land 와 같은 함수다.
+BASE="$(base_branch_for "$REPO")"
+
 DIRTY="$(git -C "$WT" status --porcelain | head -5)"
 if [ -n "$DIRTY" ]; then
   printf '작업 트리가 깨끗하지 않다. 리뷰가 도는 동안 diff가 바뀌면 판정이 실제로 커밋될 것과 달라진다.\n' >&2
@@ -36,8 +39,13 @@ if [ -n "$DIRTY" ]; then
   [ "${FORCE:-}" = "1" ] || exit 1
 fi
 
-AHEAD="$(git -C "$WT" rev-list --count "$BASE_BRANCH..HEAD" 2>/dev/null || echo 0)"
-[ "$AHEAD" -gt 0 ] || die "$BASE_BRANCH 대비 커밋이 없다. 리뷰할 것이 없다."
+# 기준 브랜치가 이 워크트리에 없으면 origin 쪽을 본다. status 와 같은 fallback 이다.
+# 세는 것만 맞춰서는 모자란다 -- 아래 프롬프트가 리뷰어에게 범위를 그대로
+# 넘기므로, 리뷰어가 칠 수 있는 이름으로 여기서 정해 둔다.
+REV="$BASE"
+git -C "$WT" rev-parse --verify -q "$REV" >/dev/null 2>&1 || REV="origin/$BASE"
+AHEAD="$(git -C "$WT" rev-list --count "$REV..HEAD" 2>/dev/null || echo 0)"
+[ "$AHEAD" -gt 0 ] || die "$BASE 대비 커밋이 없다. 리뷰할 것이 없다."
 
 OUT="$(review_file "$REPO" "$NAME")"
 mkdir -p "$ORCA_REVIEWS"
@@ -101,7 +109,7 @@ else
 $CONTEXT"
   BODY="너는 reviewer다. **읽기만 한다. 코드도 문서도 고치지 않고 커밋하지 않는다.**
 
-리뷰 대상은 지금 이 worktree($REPO, 브랜치 $NAME)이고 범위는 커밋 범위 \`$BASE_BRANCH..HEAD\`다.$CONTEXT
+리뷰 대상은 지금 이 worktree($REPO, 브랜치 $NAME)이고 범위는 커밋 범위 \`$REV..HEAD\`다.$CONTEXT
 정확성과 공유 계약 정합, 스펙 정합을 본다. 빌드와 테스트를 실제로 돌려 결과를 함께 적는다."
 fi
 BODY="$BODY$SCOPE"
@@ -109,7 +117,7 @@ BODY="$BODY$SCOPE"
 # 이미 살아 있는 리뷰어가 있으면 그쪽에 재리뷰를 시킨다
 if [ "${NEW:-}" != "1" ] && EXIST="$(load_handle "$REPO" "$NAME" review 2>/dev/null)"; then
   printf '리뷰어가 이미 떠 있다. 재리뷰를 시킨다: %s\n' "$EXIST"
-  send_prompt "$EXIST" "고친 것이 커밋됐다. \`$BASE_BRANCH..HEAD\`를 다시 리뷰한다.${SCOPE}${OUT_RULE}" \
+  send_prompt "$EXIST" "고친 것이 커밋됐다. \`$REV..HEAD\`를 다시 리뷰한다.${SCOPE}${OUT_RULE}" \
     || die "메시지가 리뷰어에 안 들어갔다. Orca에서 그 탭을 직접 본다."
   # 카드는 메시지가 실제로 들어간 뒤에 찍는다. 위에서 die하면 여기까지 안 온다.
   card "$WT" in-review "재리뷰 ${ROUND}차 (커밋 ${AHEAD}개)"

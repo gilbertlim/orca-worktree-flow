@@ -66,6 +66,7 @@ n_closed=0
 # 실제로 그래서 사람이 세 번을 먼저 밀었다.
 self_ahead=0
 self_dirty=0
+self_base=""
 
 n_total=0
 n_stale=0
@@ -73,6 +74,13 @@ n_unreviewed=0
 n_dirty=0
 n_idle=0
 n_blocked=0
+
+# 레포마다 기준 브랜치가 다르다. base_branch_for 는 lib.sh 에 있고 dispatch,
+# review, land 도 같은 것을 쓴다 -- status 가 안내한 land 가 실제로 돌게 하려면
+# 기준을 한 자리에서 정해야 한다.
+# 그 함수를 아래 루프의 명령 치환(서브셸)에서 부르므로 레포 경로 메모가 부모로
+# 안 돌아온다. 여기서 한 번 채워 두면 서브셸이 그것을 물려받는다.
+repo_paths >/dev/null
 
 # preview 는 TUI 마지막 줄이다. 도는 중인지를 추가 호출 없이 여기서 가른다.
 TERMS="$(orca terminal list --json 2>/dev/null | python3 -c '
@@ -124,7 +132,19 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   mine "$repo" "$name" || continue
   found=1
 
-  ahead="$(git -C "$dir" rev-list --count "$BASE_BRANCH..HEAD" 2>/dev/null || echo '?')"
+  # 기준 브랜치가 이 워크트리에 없으면 origin 쪽을 본다. 워크트리는 브랜치를
+  # 메인 체크아웃과 나눠 쓰므로, 이 fallback 이 실제로 도는 것은 그 기준 브랜치를
+  # 로컬에 한 번도 꺼내 놓은 적 없는 레포뿐이다.
+  # 둘 다 없으면 '?' 로 둔다 -- 0 은 "커밋이 없다"라 land 를 안 묻는 값이고,
+  # 못 센 것을 0 으로 적으면 그 둘이 같아진다.
+  # ponytail: 로컬 기준을 먼저 본다. 메인 체크아웃이 origin 보다 낡아 있으면
+  # 이미 land 된 커밋까지 이 워크트리 몫으로 세어진다. land 가 머지하는 대상도
+  # 그 로컬 브랜치라 표와 land 가 어긋나지는 않는다. 어긋나면 origin 을 먼저
+  # 보게 바꾸고, 그때는 land 쪽도 같이 옮긴다.
+  base="$(base_branch_for "$repo")"
+  ahead="$(git -C "$dir" rev-list --count "$base..HEAD" 2>/dev/null \
+           || git -C "$dir" rev-list --count "origin/$base..HEAD" 2>/dev/null \
+           || echo '?')"
   dirty="$(git -C "$dir" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 
   # 터미널은 개수만으로는 못 읽는다. 도는 중과 승인을 기다리는 중이 같은 "1개"다.
@@ -163,6 +183,7 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   case "$repo.$name" in
     "$OWNER")
       self_ahead="${ahead:-0}"
+      self_base="$base"
       self_dirty="${dirty:-0}"
       ;;
     *)
@@ -209,7 +230,9 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   name="$(basename "$dir")"
   [ -n "$FILTER" ] && [ "$repo" != "$FILTER" ] && continue
   mine "$repo" "$name" || continue
-  log="$(git -C "$dir" log --oneline "$BASE_BRANCH..HEAD" 2>/dev/null)"
+  base="$(base_branch_for "$repo")"
+  log="$(git -C "$dir" log --oneline "$base..HEAD" 2>/dev/null \
+         || git -C "$dir" log --oneline "origin/$base..HEAD" 2>/dev/null || true)"
   [ -n "$log" ] || continue
   printf '=== %s/%s\n%s\n\n' "$repo" "$name" "$log"
 done
@@ -228,7 +251,7 @@ fi
 # 판정 파일을 안 보고, 미커밋이 없고 기준 브랜치보다 앞서 있으면 물을 값이다.
 if [ -n "$OWNER" ] && [ "${self_ahead:-0}" != 0 ] && [ "${self_ahead:-?}" != '?' ] \
    && [ "${self_dirty:-0}" = 0 ]; then
-  printf '▶ 이 우산 워크트리에도 %s 앞에 커밋 %s개가 서 있다.\n' "$BASE_BRANCH" "$self_ahead"
+  printf '▶ 이 우산 워크트리에도 %s 앞에 커밋 %s개가 서 있다.\n' "${self_base:-$BASE_BRANCH}" "$self_ahead"
   printf '  land할지 사람에게 묻는다. 이 워크트리 안에서 부르면 지우지 않고 머지와 push만 한다.\n\n'
 fi
 

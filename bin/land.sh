@@ -18,6 +18,10 @@ MAIN="$(resolve_repo "$REPO")"
 WT="$(worktree_path "$REPO" "$NAME")"
 require_worktree "$WT"
 
+# 기준 브랜치는 그 레포 것으로 정한다. status, dispatch, review 와 같은 함수다.
+# status 가 "닫혔다"고 안내한 것을 여기서 실제로 머지하려면 둘이 같아야 한다.
+BASE="$(base_branch_for "$REPO")"
+
 BRANCH="$(git -C "$WT" branch --show-current)"
 [ -n "$BRANCH" ] || die "$WT 가 브랜치에 붙어 있지 않다."
 
@@ -25,20 +29,27 @@ DIRTY="$(git -C "$WT" status --porcelain)"
 [ -z "$DIRTY" ] || die "워크트리에 미커밋 변경이 남아 있다. 커밋하거나 버린 뒤 다시 부른다.
 $DIRTY"
 
+# 메인 체크아웃이 기준 브랜치에 앉아 있는지를 먼저 본다. 아래 rev-list 가
+# "$BASE" 를 쓰는데, 기준 브랜치가 origin 에만 있는 레포에서는 그것이 git 의
+# fatal 만 남기고 128로 끊긴다. 이 검사가 위에 있으면 그 자리에 사람이 읽을
+# 문장이 나오고, rev-list 는 브랜치가 있는 것이 보장된 뒤에 돈다.
+CUR="$(git -C "$MAIN" branch --show-current)"
+[ "$CUR" = "$BASE" ] || die "메인 체크아웃이 $BASE 가 아니라 $CUR 에 있다. 옮긴 뒤 다시 부른다."
+
 # 머지가 이미 끝난 워크트리도 여기로 온다. push가 한 번 실패했거나, 사람이
 # 손으로 머지했거나, KEEP=1 로 남겨 둔 것을 나중에 치우는 자리다. 그때
 # "머지할 것이 없다"로 죽으면 뒷정리를 할 마디가 아예 없다.
-AHEAD="$(git -C "$WT" rev-list --count "$BASE_BRANCH..$BRANCH")"
+AHEAD="$(git -C "$WT" rev-list --count "$BASE..$BRANCH")"
 MERGED=0
 if [ "$AHEAD" = 0 ]; then
-  git -C "$WT" merge-base --is-ancestor "$BRANCH" "$BASE_BRANCH" 2>/dev/null \
-    || die "$BASE_BRANCH 대비 커밋이 없다. 머지할 것이 없다."
+  git -C "$WT" merge-base --is-ancestor "$BRANCH" "$BASE" 2>/dev/null \
+    || die "$BASE 대비 커밋이 없다. 머지할 것이 없다."
   MERGED=1
   printf '%s 는 이미 %s 에 들어가 있다. 머지를 건너뛰고 push와 뒷정리만 한다.\n' \
-    "$BRANCH" "$BASE_BRANCH"
+    "$BRANCH" "$BASE"
 else
-  printf '%s 의 %s 를 %s 에 머지한다 (커밋 %s개)\n' "$REPO" "$BRANCH" "$BASE_BRANCH" "$AHEAD"
-  git -C "$WT" log --oneline "$BASE_BRANCH..$BRANCH"
+  printf '%s 의 %s 를 %s 에 머지한다 (커밋 %s개)\n' "$REPO" "$BRANCH" "$BASE" "$AHEAD"
+  git -C "$WT" log --oneline "$BASE..$BRANCH"
 fi
 
 # 리뷰를 안 거친 것이 조용히 기준 브랜치에 들어가지 않게 한다.
@@ -57,9 +68,6 @@ else
   printf '%s\n\n' "위 판정이 닫힌 것이 맞는지 보고 진행한다"
 fi
 
-CUR="$(git -C "$MAIN" branch --show-current)"
-[ "$CUR" = "$BASE_BRANCH" ] || die "메인 체크아웃이 $BASE_BRANCH 가 아니라 $CUR 에 있다. 옮긴 뒤 다시 부른다."
-
 # 메인 체크아웃은 다른 세션이 함께 만지므로, 남의 미커밋 변경이 있으면 알리고 멈춘다.
 OTHER="$(git -C "$MAIN" status --porcelain)"
 if [ -n "$OTHER" ]; then
@@ -74,23 +82,23 @@ fi
 # 일부러 건너뛴 것과 하려다 실패한 것을 가른다. 둘을 0 하나로 뭉치면
 # NO_PUSH=1 이 실패 경로로 떨어져 "push가 안 됐다"를 찍고 1로 빠진다.
 if [ "${NO_PUSH:-}" = "1" ]; then
-  printf '\npush를 건너뛴다. 로컬 %s 에만 있다.\n' "$BASE_BRANCH"
+  printf '\npush를 건너뛴다. 로컬 %s 에만 있다.\n' "$BASE"
   PUSHED=skip
 else
   printf '\npush한다. 훅의 사람 확인 프롬프트가 여기서 걸린다.\n'
-  if git -C "$MAIN" push origin "$BASE_BRANCH" 2>&1 | tail -2; then PUSHED=1; else PUSHED=0; fi
+  if git -C "$MAIN" push origin "$BASE" 2>&1 | tail -2; then PUSHED=1; else PUSHED=0; fi
 fi
 
 if [ "$PUSHED" = 0 ]; then
   # 머지는 됐는데 push만 안 된 상태다. 카드가 이걸 들고 있어야 한다 --
   # 안 그러면 리뷰 중으로 보이고, 실제로는 손볼 것이 남지 않은 워크트리가 방치된다.
   card "$WT" "" "머지됨, push 실패 -- 손으로 올린다"
-  journal "land $REPO/$NAME -- $BASE_BRANCH 에 머지, push 실패"
+  journal "land $REPO/$NAME -- $BASE 에 머지, push 실패"
   printf 'push가 안 됐다. 워크트리를 남긴다 -- 지우면 되돌릴 자리가 사라진다.\n' >&2
   # land를 다시 부르라고 하지 않는다. 머지는 이미 됐으니 다음 호출은
   # "머지할 것이 없다"에서 멈춘다. 남은 것은 push와 뒷정리 둘뿐이다.
   printf '\n손으로 마무리한다:\n' >&2
-  printf '  git -C %s push origin %s\n' "$MAIN" "$BASE_BRANCH" >&2
+  printf '  git -C %s push origin %s\n' "$MAIN" "$BASE" >&2
   printf '  orca worktree rm --worktree "path:%s" --force\n' "$WT" >&2
   exit 1
 fi
@@ -98,15 +106,15 @@ fi
 # push를 건너뛰면 워크트리도 남긴다. 브랜치를 지우고 나면 다시 올릴 자리가
 # 로컬 기준 브랜치 하나뿐이라, 되돌릴 일이 생겼을 때 골라낼 것이 없다.
 if [ "$PUSHED" = skip ]; then
-  card "$WT" "" "머지됨, push 건너뜀 -- 로컬 $BASE_BRANCH 에만"
-  journal "land $REPO/$NAME -- 로컬 $BASE_BRANCH 에 머지 (커밋 ${AHEAD}개, push 건너뜀)"
+  card "$WT" "" "머지됨, push 건너뜀 -- 로컬 $BASE 에만"
+  journal "land $REPO/$NAME -- 로컬 $BASE 에 머지 (커밋 ${AHEAD}개, push 건너뜀)"
 else
-  card "$WT" completed "$BASE_BRANCH 에 머지, push 완료"
+  card "$WT" completed "$BASE 에 머지, push 완료"
   # 워크트리와 카드는 아래에서 지워진다. 무엇이 닫혔는지는 이 줄로만 남는다.
   if [ "$MERGED" = 1 ]; then
     journal "land $REPO/$NAME -- 이미 머지돼 있어 뒷정리만 (리뷰 $(rounds_done "$REPO" "$NAME")차)"
   else
-    journal "land $REPO/$NAME -- $BASE_BRANCH 에 머지, push 완료 (커밋 ${AHEAD}개, 리뷰 $(rounds_done "$REPO" "$NAME")차)"
+    journal "land $REPO/$NAME -- $BASE 에 머지, push 완료 (커밋 ${AHEAD}개, 리뷰 $(rounds_done "$REPO" "$NAME")차)"
   fi
 fi
 
@@ -124,7 +132,7 @@ if [ "${KEEP:-}" = "1" ] || [ "$PUSHED" = skip ]; then
   printf '워크트리를 남긴다: %s\n' "$WT"
   if [ "$PUSHED" = skip ]; then
     printf '올린 뒤 지운다: git -C %s push origin %s && orca worktree rm --worktree "path:%s" --force\n' \
-      "$MAIN" "$BASE_BRANCH" "$WT"
+      "$MAIN" "$BASE" "$WT"
   fi
 else
   orca worktree rm --worktree "path:$WT" --force --json 2>&1 | orca_check
