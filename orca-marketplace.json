@@ -7,7 +7,7 @@
       "source": {
         "kind": "git",
         "url": "https://github.com/gilbertlim/orca-worktree-flow.git",
-        "ref": "v1.2.1"
+        "ref": "v1.2.2"
       },
       "description": "Orca 워크트리 작업 관리를 위한 초기 설정과 에이전트 상태 알림",
       "categories": ["workflow"]
