@@ -51,7 +51,14 @@ emit_counts() {
   printf 'dirty=%s\n' "${n_dirty:-0}"
   printf 'no_terminal=%s\n' "${n_idle:-0}"
   printf 'blocked=%s\n' "${n_blocked:-0}"
+  printf 'owned=%s\n' "${n_owned:-0}"
+  printf 'closed=%s\n' "${n_closed:-0}"
 }
+
+# 우산이 낸 워크트리 중 몇 개가 닫혔나. 우산 자신은 안 센다 -- 오케스트레이터가
+# 앉아 있는 자리라 늘 더럽고, 그것 때문에 "다 닫혔다"가 영영 안 뜬다.
+n_owned=0
+n_closed=0
 
 n_total=0
 n_stale=0
@@ -144,6 +151,22 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
     if [ "$rt" -lt "$ct" ]; then review="${rounds}차 낡음"; else review="${rounds}차"; fi
   fi
 
+  # 닫힘: 커밋이 서 있고, 미커밋이 없고, 판정이 최신이고, blocking이 0.
+  # 넷 다 맞아야 land를 물을 값이다.
+  case "$repo.$name" in
+    "$OWNER") ;;
+    *)
+      if [ -n "$OWNER" ]; then
+        n_owned=$((n_owned + 1))
+        if [ "${dirty:-0}" = 0 ] && [ "${ahead:-0}" != 0 ] && [ "${ahead:-?}" != '?' ] \
+           && [ -f "$rf" ] && [ "$review" = "${rounds}차" ] \
+           && [ "$(blocking_count "$rf")" = 0 ]; then
+          n_closed=$((n_closed + 1))
+        fi
+      fi
+      ;;
+  esac
+
   n_total=$((n_total + 1))
   case "$review" in *낡음) n_stale=$((n_stale + 1)) ;; esac
   [ "$review" = "안 함" ] && n_unreviewed=$((n_unreviewed + 1))
@@ -180,6 +203,16 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   [ -n "$log" ] || continue
   printf '=== %s/%s\n%s\n\n' "$repo" "$name" "$log"
 done
+
+# 다 닫혔으면 그것을 말해 준다. 표만 찍고 말면 오케스트레이터가 계속 폴링하거나
+# 혼자 land해 버린다. 무엇을 할지는 여기서 안 정하고 사람에게 넘긴다 --
+# 계약이 걸린 변경은 머지 순서가 있고 그건 이 표에 안 보인다.
+if [ "${n_owned:-0}" -gt 0 ] && [ "$n_owned" = "$n_closed" ]; then
+  printf '▶ 내가 낸 워크트리 %s개가 전부 닫혔다.\n' "$n_owned"
+  printf '  진척을 기록하고 land할지 사람에게 묻는다.\n\n'
+elif [ "${n_closed:-0}" -gt 0 ]; then
+  printf '▶ %s개 중 %s개가 닫혔다. 나머지가 끝나면 land를 묻는다.\n\n' "$n_owned" "$n_closed"
+fi
 
 # 카드도 커밋도 못 드는 것 -- 무엇을 왜 그렇게 했는지 -- 이 파일에 쌓인다.
 # 컨텍스트가 차 세션을 갈아탈 때 이어갈 자리가 여기다.
