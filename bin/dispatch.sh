@@ -8,7 +8,7 @@
 #
 # 환경변수:
 #   AGENT_CMD    기본은 설정의 agentCmd, 없으면 "claude --permission-mode auto"
-#   BASE_BRANCH  기본은 설정의 baseBranch, 없으면 main
+#   BASE_BRANCH  기본은 그 레포의 설정에 적힌 baseBranch, 없으면 main
 #   NO_SETUP=1   셋업 스크립트를 건너뛴다
 #   ORCA_OWNER   우산을 손으로 지정한다. 기본은 $PWD 에서 알아낸다
 #
@@ -29,6 +29,9 @@ TITLE="$2"
 [ -s "$PROMPT_FILE" ] || die "프롬프트 파일이 비었다: $PROMPT_FILE"
 
 resolve_repo "$REPO" >/dev/null
+
+# 기준 브랜치는 그 레포 것으로 정한다. status, review, land 와 같은 함수다.
+BASE="$(base_branch_for "$REPO")"
 
 OWNER="$(owner_id)"
 if [ -n "$OWNER" ]; then
@@ -55,7 +58,7 @@ printf '워크트리를 만든다: %s/%s\n' "$REPO" "$NAME"
 orca worktree create \
   --repo "name:$REPO" \
   --name "$NAME" \
-  --base-branch "$BASE_BRANCH" \
+  --base-branch "$BASE" \
   --json 2>&1 | orca_check
 
 require_worktree "$WT"

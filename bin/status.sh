@@ -14,9 +14,6 @@
 # 통째로 무너지고 배너는 두어 줄에서 잘리므로, 거기엔 표가 아니라 수를 싣는다.
 # 플러그인은 앱 프로세스에서 부르므로 우산이 없고, 그래서 늘 전부를 센다.
 
-# lib.sh 가 설정 파일 값으로 덮기 전에, 사람이 env 로 준 것인지를 잡아 둔다.
-BASE_BRANCH_ENV="${BASE_BRANCH:-}"
-
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SUMMARY=0
@@ -78,40 +75,12 @@ n_dirty=0
 n_idle=0
 n_blocked=0
 
-# 표에 뜨는 워크트리는 여러 레포의 것인데, lib.sh 는 $PWD 한 자리에서 기준
-# 브랜치를 한 번 정한다. 그것을 전부에 대면 기준이 main 이 아닌 레포(master,
-# develop)는 커밋 칸이 통째로 '?' 가 되고 아래 커밋 목록도 빈다.
-# 레포마다 제 메인 체크아웃에서 .orca-flow.json 을 찾아 읽는다. 경로는 여기서
-# 한 번에 들고 온다 -- 레포마다 repo_path 를 부르면 orca repo list 를 그 수만큼 친다.
-REPO_PATHS="$(orca repo list --json 2>/dev/null | python3 -c '
-import sys, json
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-for r in d.get("result", {}).get("repos", []):
-    print("%s\t%s" % (r.get("displayName") or "", r.get("path") or ""))
-' || true)"
-
-# 한 번 읽은 것은 여기 쌓는다. bash 3.2 에는 연관 배열이 없어서 줄로 든다.
-BASE_CACHE=""
-
-base_branch_for() { # repo -- 그 레포의 기준 브랜치
-  # env 로 명시한 것은 그대로 이긴다. 한 번만 다른 기준으로 볼 때 쓰는 자리다.
-  [ -z "$BASE_BRANCH_ENV" ] || { printf '%s' "$BASE_BRANCH_ENV"; return 0; }
-  local repo="$1" path b
-  b="$(printf '%s\n' "$BASE_CACHE" | awk -F'\t' -v n="$repo" '$1==n {print $2; exit}')"
-  if [ -z "$b" ]; then
-    path="$(printf '%s\n' "$REPO_PATHS" | awk -F'\t' -v n="$repo" '$1==n {print $2; exit}')"
-    # 서브셸로 부르는 것은 orca_flow_load 가 PROJECT_ROOT 를 덮어서다.
-    if [ -n "$path" ]; then
-      b="$( (orca_flow_load "$path"; cfg_get baseBranch "$BASE_BRANCH") )" || b=""
-    fi
-    b="${b:-$BASE_BRANCH}"
-    BASE_CACHE="$(printf '%s\n%s\t%s' "$BASE_CACHE" "$repo" "$b")"
-  fi
-  printf '%s' "$b"
-}
+# 레포마다 기준 브랜치가 다르다. base_branch_for 는 lib.sh 에 있고 dispatch,
+# review, land 도 같은 것을 쓴다 -- status 가 안내한 land 가 실제로 돌게 하려면
+# 기준을 한 자리에서 정해야 한다.
+# 그 함수를 아래 루프의 명령 치환(서브셸)에서 부르므로 레포 경로 메모가 부모로
+# 안 돌아온다. 여기서 한 번 채워 두면 서브셸이 그것을 물려받는다.
+repo_paths >/dev/null
 
 # preview 는 TUI 마지막 줄이다. 도는 중인지를 추가 호출 없이 여기서 가른다.
 TERMS="$(orca terminal list --json 2>/dev/null | python3 -c '
@@ -163,9 +132,15 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
   mine "$repo" "$name" || continue
   found=1
 
-  # 기준 브랜치가 이 워크트리에 없으면 origin 쪽을 본다. 갓 딴 워크트리는 로컬
-  # 브랜치를 안 들고 있는 때가 있다. 둘 다 없으면 '?' 로 둔다 -- 0 은 "커밋이
-  # 없다"라 land 를 안 묻는 값이고, 못 센 것을 0 으로 적으면 그 둘이 같아진다.
+  # 기준 브랜치가 이 워크트리에 없으면 origin 쪽을 본다. 워크트리는 브랜치를
+  # 메인 체크아웃과 나눠 쓰므로, 이 fallback 이 실제로 도는 것은 그 기준 브랜치를
+  # 로컬에 한 번도 꺼내 놓은 적 없는 레포뿐이다.
+  # 둘 다 없으면 '?' 로 둔다 -- 0 은 "커밋이 없다"라 land 를 안 묻는 값이고,
+  # 못 센 것을 0 으로 적으면 그 둘이 같아진다.
+  # ponytail: 로컬 기준을 먼저 본다. 메인 체크아웃이 origin 보다 낡아 있으면
+  # 이미 land 된 커밋까지 이 워크트리 몫으로 세어진다. land 가 머지하는 대상도
+  # 그 로컬 브랜치라 표와 land 가 어긋나지는 않는다. 어긋나면 origin 을 먼저
+  # 보게 바꾸고, 그때는 land 쪽도 같이 옮긴다.
   base="$(base_branch_for "$repo")"
   ahead="$(git -C "$dir" rev-list --count "$base..HEAD" 2>/dev/null \
            || git -C "$dir" rev-list --count "origin/$base..HEAD" 2>/dev/null \

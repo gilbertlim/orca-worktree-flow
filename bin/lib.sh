@@ -35,6 +35,9 @@ orca_flow_load "$PWD"
 ORCA_WORKSPACES="$(expand_home "${ORCA_WORKSPACES:-$(cfg_get workspaces "$HOME/orca/workspaces")}")"
 ORCA_REVIEWS="$(expand_home "${ORCA_REVIEWS:-$(cfg_get reviews "$HOME/orca/reviews")}")"
 AGENT_CMD="${AGENT_CMD:-$(cfg_get agentCmd "claude --permission-mode auto")}"
+# 사람이 env 로 준 것인지를 설정 파일 값으로 덮기 전에 잡아 둔다.
+# base_branch_for 의 우선순위가 여기서 나온다.
+BASE_BRANCH_ENV="${BASE_BRANCH:-}"
 BASE_BRANCH="${BASE_BRANCH:-$(cfg_get baseBranch main)}"
 
 # 프로젝트가 쓴 셋업 스크립트. 안 적으면 플러그인이 들고 온 것을 쓴다.
@@ -65,6 +68,50 @@ for r in json.load(sys.stdin)["result"]["repos"]:
         print(r["path"])
         break
 ' "$1"
+}
+
+# 레포 displayName -> 메인 체크아웃 경로를 한 줄에 하나씩. 여러 레포를 도는
+# 자리가 있어 한 번에 들고 온다 -- 레포마다 repo_path 를 부르면 orca repo list 를
+# 그 수만큼 친다. 처음 쓸 때 채우고 그 뒤로는 안 친다.
+# 서브셸에서 처음 부르면 그 메모가 부모로 안 돌아오므로, 레포를 여럿 도는 쪽은
+# 루프에 들기 전에 `repo_paths >/dev/null` 로 한 번 채워 둔다.
+REPO_PATHS=""
+repo_paths() {
+  [ -n "$REPO_PATHS" ] || REPO_PATHS="$(orca repo list --json 2>/dev/null | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for r in d.get("result", {}).get("repos", []):
+    # 탭으로 이어 찍으므로 값 안의 탭은 턴다. TERMS, CARDS 블록과 같은 규칙이다.
+    print("%s\t%s" % (
+        (r.get("displayName") or "").replace("\t", " "),
+        (r.get("path") or "").replace("\t", " "),
+    ))
+' || true)"
+  printf '%s\n' "$REPO_PATHS"
+}
+
+# 그 레포의 기준 브랜치.
+#
+# 우선순위는 env BASE_BRANCH > 레포 설정 > 호스트 설정이다. 마지막 것이 위의
+# $BASE_BRANCH -- $PWD 나 ORCA_FLOW_ROOT 에서 한 번 정해진 값이다.
+#
+# 레포마다 따로 읽는 이유는 status 가 여러 레포의 워크트리를 한 표에 찍기
+# 때문이다. 한 기준을 전부에 대면 기준이 main 이 아닌 레포는 커밋 칸이 통째로
+# '?' 가 된다. status 가 안내한 land 가 실제로 돌려면 dispatch, review, land 도
+# 같은 함수로 기준을 정해야 한다.
+#
+# 서브셸에서 ORCA_FLOW_ROOT 를 걷어 내는 것은, 그것이 있으면 config.sh 가 인자로
+# 준 경로를 보지도 않아서다. 앱 플러그인이 status 를 부를 때 바로 그것을 준다.
+base_branch_for() { # repo
+  [ -z "$BASE_BRANCH_ENV" ] || { printf '%s' "$BASE_BRANCH_ENV"; return 0; }
+  local path b
+  path="$(repo_paths | awk -F'\t' -v n="$1" '$1==n {print $2; exit}')"
+  [ -n "$path" ] || { printf '%s' "$BASE_BRANCH"; return 0; }
+  b="$( (unset ORCA_FLOW_ROOT; orca_flow_load "$path"; cfg_get baseBranch "$BASE_BRANCH") )" || b=""
+  printf '%s' "${b:-$BASE_BRANCH}"
 }
 
 # 등록된 레포 이름 전부
