@@ -5,6 +5,9 @@
 #   KEEP=1 land.sh <repo> <worktree-name>       머지만 하고 워크트리를 남긴다
 #   NO_PUSH=1 land.sh <repo> <worktree-name>    push를 건너뛰고 워크트리를 남긴다
 #
+# 우산 워크트리 자신을 받을 때는 판정 파일을 안 본다. 리뷰를 안 거치는 자리라
+# 그렇고, 그 판단은 status.sh 와 같은 기준(owner_id)으로 한다.
+#
 # push를 하는 것이 정책이다. 사람이 최종 게이트인 것은 맞지만 그 게이트는
 # 커밋 훅의 ask 프롬프트가 잡는다. 스크립트가 push를 아예 안 하면 닫았다고
 # 말한 작업이 로컬에만 남는다.
@@ -21,6 +24,14 @@ require_worktree "$WT"
 # 기준 브랜치는 그 레포 것으로 정한다. status, dispatch, review 와 같은 함수다.
 # status 가 "닫혔다"고 안내한 것을 여기서 실제로 머지하려면 둘이 같아야 한다.
 BASE="$(base_branch_for "$REPO")"
+
+# 우산 워크트리 자신인가. status.sh 가 우산을 가르는 기준과 같은 것을 쓴다.
+# 그쪽은 우산이면 판정 파일을 안 보고 커밋만 세는데(case "$repo.$name" in "$OWNER"),
+# land 만 판정을 요구하면 우산을 받을 때마다 FORCE=1 을 쳐야 한다. 그러면 리뷰를
+# 안 거친 것을 막으려고 둔 가드가 습관적으로 꺼지고, 정작 서브 레포에서 그것이
+# 필요할 때도 같이 꺼진다. 둘을 한 기준으로 맞춘다.
+UMBRELLA=0
+[ "$REPO.$NAME" != "$(owner_id)" ] || UMBRELLA=1
 
 BRANCH="$(git -C "$WT" branch --show-current)"
 [ -n "$BRANCH" ] || die "$WT 가 브랜치에 붙어 있지 않다."
@@ -57,6 +68,10 @@ fi
 RF="$(review_file "$REPO" "$NAME")"
 if [ "$MERGED" = 1 ]; then
   :
+elif [ "$UMBRELLA" = 1 ]; then
+  # 오케스트레이터가 앉은 자리다. 여기 짜인 것은 진행 문서와 계약 초안이라
+  # 리뷰어를 붙이는 자리가 아니다. 무엇이 들어가는지는 위 로그로 이미 보였다.
+  printf '\n우산 워크트리다. 리뷰를 안 거치는 자리라 판정 파일은 안 본다.\n\n'
 elif [ ! -f "$RF" ]; then
   printf '\n리뷰 결과 파일이 없다: %s\n' "$RF" >&2
   printf '%s/bin/review.sh %s %s 로 먼저 리뷰한다. 건너뛰려면 FORCE=1 을 준다.\n' "$PLUGIN_ROOT" "$REPO" "$NAME" >&2
