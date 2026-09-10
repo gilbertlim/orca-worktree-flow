@@ -1,4 +1,4 @@
-# worktree-flow
+# orca-worktree-flow
 
 한 작업이 레포 여럿에 걸릴 때, 각 레포의 몫을 [Orca](https://github.com/stablyai/orca) 워크트리에 하나씩 떼어 에이전트를 붙이고 리뷰와 머지까지 그 워크트리 안에서 끝내는 절차다. <br>
 오케스트레이터 세션은 작업 분배와 머지 시점만 관리하고, 코드와 diff는 각 워크트리 안에서 다룬다.
@@ -21,16 +21,16 @@
 **Claude Code 쪽.**
 
 ```
-/plugin marketplace add gilbertlim/worktree-flow
-/plugin install orca@worktree-flow
+/plugin marketplace add gilbertlim/orca-worktree-flow
+/plugin install orca@orca-worktree-flow
 ```
 
-**Orca 앱 쪽.** 설정 → Plugins → 마켓플레이스 소스에서 Git URL로 `https://github.com/gilbertlim/worktree-flow`, ref로 `main`을 준다. 소스가 읽는 것은 루트의 `orca-marketplace.json`이고, 그 안에서 플러그인 자체는 태그(`v1.2.0`)에 고정돼 있다. `main`을 소스 ref로 두는 것은 새 판을 낼 때 마켓플레이스 파일만 고치면 되게 하려는 것이다.
+**Orca 앱 쪽.** 설정 → Plugins → 마켓플레이스 소스에서 Git URL로 `https://github.com/gilbertlim/orca-worktree-flow`, ref로 `main`을 준다. 소스가 읽는 것은 루트의 `orca-marketplace.json`이고, 그 안에서 플러그인 자체는 태그(`v1.2.0`)에 고정돼 있다. `main`을 소스 ref로 두는 것은 새 판을 낼 때 마켓플레이스 파일만 고치면 되게 하려는 것이다.
 
 로컬 경로로 붙이려면 클론한 뒤 설정 → Plugins → Installed에서 그 디렉터리를 지정한다.
 
 ```bash
-git clone git@github.com:gilbertlim/worktree-flow.git ~/worktree-flow
+git clone git@github.com:gilbertlim/orca-worktree-flow.git ~/orca-worktree-flow
 ```
 
 **프로젝트 쪽.** 쓸 프로젝트의 루트에 `.orca-flow.json`을 둔다. `templates/orca-flow.json`을 복사해 고치면 되고, 없으면 기본값을 사용한다.
@@ -42,8 +42,8 @@ git clone git@github.com:gilbertlim/worktree-flow.git ~/worktree-flow
 우산 워크트리 안에서 `dispatch.sh`를 부르면 만들어지는 이름 앞에 `<우산레포>.<우산워크트리>.` 가 붙는다.
 
 ```
-우산:  worktree-flow/orca-check
-서브:  shared/worktree-flow.orca-check.migration-platform-trade
+우산:  orca-worktree-flow/orca-check
+서브:  shared/orca-worktree-flow.orca-check.migration-platform-trade
 ```
 
 접두는 워크트리의 소유를 나타낸다. `status.sh`가 그것으로 남의 워크트리를 걸러낸다. 별도 인덱스 파일을 안 두는 이유도 여기 있다 — 사람이 Orca UI에서 워크트리를 지우면 인덱스는 곧 실제와 어긋나지만, 이름은 워크트리와 같이 사라진다.
@@ -60,8 +60,8 @@ git clone git@github.com:gilbertlim/worktree-flow.git ~/worktree-flow
 
 ```
 $ bin/dispatch.sh --repos
-worktree-flow           /Users/me/dev/worktree-flow
-worktree-flow-sub-repo  /Users/me/dev/worktree-flow-sub-repo
+orca-worktree-flow           /Users/me/dev/orca-worktree-flow
+orca-worktree-flow-sub-repo  /Users/me/dev/orca-worktree-flow-sub-repo
 ```
 
 경로를 함께 주는 것은 오케스트레이터가 각 레포의 `CLAUDE.md`를 읽고 담당 경계를 봐야 하기 때문이다. 그것으로 안 갈리면 작업 설명의 도메인 용어를 후보 레포에서 `grep`한다. 그래도 둘 이상 남으면 근거와 함께 사람에게 고르게 한다. 그룹 밖까지 봐야 하면 `--repos --all`이다.
@@ -69,8 +69,8 @@ worktree-flow-sub-repo  /Users/me/dev/worktree-flow-sub-repo
 **워크트리 이름은 `<동작>-<대상>` 케밥케이스 2~4단어다.**
 
 ```
-우산:  worktree-flow/login-refactor              기능 전체
-서브:  worktree-flow-sub-repo/worktree-flow.login-refactor.auth-api   그 레포가 맡는 몫
+우산:  orca-worktree-flow/login-refactor              기능 전체
+서브:  orca-worktree-flow-sub-repo/orca-worktree-flow.login-refactor.auth-api   그 레포가 맡는 몫
 탭:    auth-api
 ```
 
@@ -93,12 +93,12 @@ worktree-flow-sub-repo  /Users/me/dev/worktree-flow-sub-repo
 
 ```
 /orca:dispatch shared migration-platform-trade  플랫폼 거래 컬럼을 판다
-     -> shared/worktree-flow.orca-check.migration-platform-trade
+     -> shared/orca-worktree-flow.orca-check.migration-platform-trade
 /orca:status
-/orca:review shared worktree-flow.orca-check.migration-platform-trade
-/orca:handback shared worktree-flow.orca-check.migration-platform-trade   # blocking이 있으면
-/orca:review shared worktree-flow.orca-check.migration-platform-trade     # 재리뷰, 2차로 센다
-/orca:land shared worktree-flow.orca-check.migration-platform-trade
+/orca:review shared orca-worktree-flow.orca-check.migration-platform-trade
+/orca:handback shared orca-worktree-flow.orca-check.migration-platform-trade   # blocking이 있으면
+/orca:review shared orca-worktree-flow.orca-check.migration-platform-trade     # 재리뷰, 2차로 센다
+/orca:land shared orca-worktree-flow.orca-check.migration-platform-trade
 ```
 
 스크립트를 직접 부르면 이렇다.
@@ -106,9 +106,9 @@ worktree-flow-sub-repo  /Users/me/dev/worktree-flow-sub-repo
 ```bash
 bin/dispatch.sh shared migration-platform-trade /tmp/prompt.md
 bin/status.sh
-bin/review.sh shared worktree-flow.orca-check.migration-platform-trade
-bin/handback.sh shared worktree-flow.orca-check.migration-platform-trade
-bin/land.sh shared worktree-flow.orca-check.migration-platform-trade
+bin/review.sh shared orca-worktree-flow.orca-check.migration-platform-trade
+bin/handback.sh shared orca-worktree-flow.orca-check.migration-platform-trade
+bin/land.sh shared orca-worktree-flow.orca-check.migration-platform-trade
 ```
 
 dispatch 뒤로는 `status.sh`가 찍어 준 이름을 그대로 복사해 넘긴다. 이미 접두가 붙은 이름은 다시 안 붙는다.
@@ -139,7 +139,7 @@ handback과 review는 blocking이 없어질 때까지 돌되 상한이 있다. �
 ```
 리뷰 6차다. 상한 5차를 넘었다.
 
-남은 판정 (~/orca/reviews/shared-worktree-flow.orca-check.trade.md) -- blocking 1건
+남은 판정 (~/orca/reviews/shared-orca-worktree-flow.orca-check.trade.md) -- blocking 1건
 ## blocking
 - src/Auth.java:88 토큰 만료 검사가 없다
 
@@ -170,12 +170,12 @@ handback과 review는 blocking이 없어질 때까지 돌되 상한이 있다. �
 카드는 지금 처지 한 줄만 든다. 앞 줄은 덮여 사라지고, land가 워크트리를 지우면 카드도 같이 간다. 그래서 dispatch, review, handback, land가 우산마다 파일 하나에 한 줄씩 남긴다.
 
 ```
-~/orca/reviews/.journal/worktree-flow.orca-check.md
+~/orca/reviews/.journal/orca-worktree-flow.orca-check.md
 
-09-10 14:02  dispatch shared/worktree-flow.orca-check.trade -- 너는 거래 컬럼 담당이다
-09-10 15:40  review shared/worktree-flow.orca-check.trade 1차 (커밋 3개)
-09-10 16:11  handback shared/worktree-flow.orca-check.trade -- blocking 2건
-09-10 17:03  land shared/worktree-flow.orca-check.trade -- main 에 머지, push 완료 (커밋 5개, 리뷰 2차)
+09-10 14:02  dispatch shared/orca-worktree-flow.orca-check.trade -- 너는 거래 컬럼 담당이다
+09-10 15:40  review shared/orca-worktree-flow.orca-check.trade 1차 (커밋 3개)
+09-10 16:11  handback shared/orca-worktree-flow.orca-check.trade -- blocking 2건
+09-10 17:03  land shared/orca-worktree-flow.orca-check.trade -- main 에 머지, push 완료 (커밋 5개, 리뷰 2차)
 ```
 
 `status.sh`가 표 아래에 마지막 다섯 줄을 붙인다. 세션을 갈아탔으면 그 줄부터 읽는다.
@@ -398,7 +398,7 @@ push가 실패하면 워크트리를 안 지운다. 지우면 되돌릴 자리�
 
 **긴 셋업은 알림을 놓칠 수 있다.** 이벤트 핸들러는 5분에 끊기고 워커는 유휴 5분에 수거된다. 자식은 detached로 띄우므로 `pnpm install`이 중간에 죽지는 않지만, 4분을 넘기면 "백그라운드로 계속 돈다"는 알림으로 바뀐다.
 
-**플러그인 `id`에 `orca`를 쓰면 설치가 거부된다.** 이 플러그인의 id가 `worktree-flow`인 이유다. 처음에 `orca-flow`로 뒀다가 설치가 계속 실패했고, 오류는 "플러그인 설치에 실패했습니다. 소스를 확인하고 다시 시도하세요" 한 줄뿐이었다. <br>
+**플러그인 `id`가 `orca-`로 시작하면 설치가 거부된다.** stablyai 몫으로 예약된 접두라 남이 쓰면 `isReservedPluginIdentity`에 걸린다(`shared/plugins/plugin-marketplace.js`의 `OFFICIAL_PLUGIN_ID_PREFIX`). 레포 이름이 `orca-worktree-flow`인데 이 플러그인의 id만 `worktree-flow`인 이유다. 처음에 `orca-flow`로 뒀다가 설치가 계속 실패했고, 오류는 "플러그인 설치에 실패했습니다. 소스를 확인하고 다시 시도하세요" 한 줄뿐이었다. <br>
 로그에도 아무것도 안 남는다 — `main.trace.ndjson`에 설치 경로가 아예 추적되지 않고 `plugins-data/audit.log`는 이미 도는 플러그인의 호출만 적는다. 그래서 매니페스트 스키마, 디렉터리 배치, 부모 경로, `.git` 유무, 하위 디렉터리, 실행 비트를 차례로 의심하게 된다. 어느 것도 원인이 아니었다. <br>
 원인은 **설치되는 설정에서 한 번에 한 줄씩 바꿔** 확인했다. 설치되는 매니페스트를 하나 확보하고 `id`, `publisher`, `name`, `description`을 각각 하나만 바꾼 디렉터리 넷을 만들어 보면 `id`에서 걸린다. `publisher`가 무엇이든 상관없다.
 

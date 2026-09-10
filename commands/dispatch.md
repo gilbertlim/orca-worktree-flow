@@ -39,8 +39,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/dispatch.sh --repos
 워크트리 이름은 `<동작>-<대상>` 케밥케이스 2~4단어다.
 
 ```
-우산:  orca-plugin/login-refactor
-서브:  orca-plugin-sub-repo/orca-plugin.login-refactor.auth-api
+우산:  orca-worktree-flow/login-refactor
+서브:  orca-worktree-flow-sub-repo/orca-worktree-flow.login-refactor.auth-api
 탭:    auth-api
 ```
 

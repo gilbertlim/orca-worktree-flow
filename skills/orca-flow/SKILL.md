@@ -23,8 +23,8 @@ description: Use when work spans several repos (or several people touching one r
 우산 워크트리 안에서 `dispatch.sh`를 부르면 서브 레포에 만들어지는 이름 앞에 `<우산레포>.<우산워크트리>.` 가 붙는다.
 
 ```
-우산:  orca-plugin/orca-check
-서브:  orca-plugin-sub-repo/orca-plugin.orca-check.login-api
+우산:  orca-worktree-flow/orca-check
+서브:  orca-worktree-flow-sub-repo/orca-worktree-flow.orca-check.login-api
 ```
 
 접두는 워크트리의 소유를 나타낸다. `status.sh`가 그것으로 남의 워크트리를 걸러내고, 별도 인덱스 파일을 안 두는 이유도 여기 있다. 사람이 Orca UI에서 워크트리를 지우면 인덱스는 곧 실제와 어긋나지만 이름은 워크트리와 같이 사라진다.
@@ -41,8 +41,8 @@ description: Use when work spans several repos (or several people touching one r
 
 ```
 $ bin/dispatch.sh --repos
-orca-plugin           /Users/me/dev/orca-plugin
-orca-plugin-sub-repo  /Users/me/dev/orca-plugin-sub-repo
+orca-worktree-flow           /Users/me/dev/orca-worktree-flow
+orca-worktree-flow-sub-repo  /Users/me/dev/orca-worktree-flow-sub-repo
 ```
 
 경로를 함께 주는 것은 오케스트레이터가 각 레포의 `CLAUDE.md`를 읽고 담당 경계를 봐야 하기 때문이다. 그것으로 안 갈리면 작업 설명의 도메인 용어를 후보 레포에서 `grep`한다. 그래도 둘 이상 남으면 근거와 함께 사람에게 고르게 한다. 그룹 밖까지 봐야 하면 `--repos --all`이다.
@@ -50,8 +50,8 @@ orca-plugin-sub-repo  /Users/me/dev/orca-plugin-sub-repo
 **워크트리 이름은 `<동작>-<대상>` 케밥케이스 2~4단어다.**
 
 ```
-우산:  orca-plugin/login-refactor              기능 전체
-서브:  orca-plugin-sub-repo/orca-plugin.login-refactor.auth-api   그 레포가 맡는 몫
+우산:  orca-worktree-flow/login-refactor              기능 전체
+서브:  orca-worktree-flow-sub-repo/orca-worktree-flow.login-refactor.auth-api   그 레포가 맡는 몫
 탭:    auth-api
 ```
 
@@ -79,7 +79,7 @@ $EDITOR /tmp/shared-trade.md
 
 # 2. 워크트리를 따고 에이전트를 붙인다. 이름에 우산 접두가 붙어서 나온다
 ${CLAUDE_PLUGIN_ROOT}/bin/dispatch.sh shared migration-platform-trade /tmp/shared-trade.md
-#   -> shared/orca-plugin.orca-check.migration-platform-trade
+#   -> shared/orca-worktree-flow.orca-check.migration-platform-trade
 
 # 3. 진행을 본다. 우산 워크트리 안이면 제 것만 찍는다
 ${CLAUDE_PLUGIN_ROOT}/bin/status.sh
@@ -87,15 +87,15 @@ ${CLAUDE_PLUGIN_ROOT}/bin/status.sh
 ${CLAUDE_PLUGIN_ROOT}/bin/status.sh --wait
 
 # 4. 커밋이 서면 같은 워크트리에서 리뷰어를 띄운다. 결과는 파일로 떨어진다
-${CLAUDE_PLUGIN_ROOT}/bin/review.sh shared orca-plugin.orca-check.migration-platform-trade
+${CLAUDE_PLUGIN_ROOT}/bin/review.sh shared orca-worktree-flow.orca-check.migration-platform-trade
 
 # 5. blocking이 있으면 그 워크트리의 작업 에이전트에게 되돌린다
-${CLAUDE_PLUGIN_ROOT}/bin/handback.sh shared orca-plugin.orca-check.migration-platform-trade
+${CLAUDE_PLUGIN_ROOT}/bin/handback.sh shared orca-worktree-flow.orca-check.migration-platform-trade
 
 # 6. 고쳐서 커밋되면 같은 리뷰어에게 재리뷰를 시킨다. 4번을 다시 부르면 된다
 
 # 7. 판정이 닫히면 기준 브랜치에 머지하고 push한 뒤 워크트리를 지운다
-${CLAUDE_PLUGIN_ROOT}/bin/land.sh shared orca-plugin.orca-check.migration-platform-trade
+${CLAUDE_PLUGIN_ROOT}/bin/land.sh shared orca-worktree-flow.orca-check.migration-platform-trade
 ```
 
 2번 뒤로는 `status.sh`가 찍어 준 이름을 그대로 복사해 넘긴다. 접두를 다시 붙이지 않아도 되게, 이미 붙어 있는 이름은 그대로 통과한다.
@@ -183,7 +183,7 @@ Orca 워크스페이스 카드에 한 줄짜리 코멘트와 보드 상태(`todo
 ```
 리뷰 6차다. 상한 5차를 넘었다.
 
-남은 판정 (~/orca/reviews/shared-orca-plugin.orca-check.trade.md) -- blocking 1건
+남은 판정 (~/orca/reviews/shared-orca-worktree-flow.orca-check.trade.md) -- blocking 1건
 ## blocking
 - src/Auth.java:88 토큰 만료 검사가 없다
 
@@ -232,10 +232,10 @@ git worktree는 추적하는 파일만 가져오는데, 앱을 띄우고 테스�
 무엇을 언제 내보내고 몇 차에 닫았는지는 스크립트가 `~/orca/reviews/.journal/<우산레포>.<우산워크트리>.md`에 한 줄씩 쌓는다. 카드는 지금 처지 한 줄만 들고 land가 워크트리를 지우면 그것도 같이 가므로, 끝난 일이 남는 자리는 이 파일뿐이다. `status.sh`가 마지막 다섯 줄을 표 아래에 붙여 준다.
 
 ```
-09-10 14:02  dispatch orca-plugin-sub-repo/orca-plugin.orca-check.login-api -- 너는 인증 담당이다
-09-10 15:40  review orca-plugin-sub-repo/orca-plugin.orca-check.login-api 1차 (커밋 3개)
-09-10 16:11  handback orca-plugin-sub-repo/orca-plugin.orca-check.login-api -- blocking 2건
-09-10 17:03  land orca-plugin-sub-repo/orca-plugin.orca-check.login-api -- main 에 머지, push 완료 (커밋 5개, 리뷰 2차)
+09-10 14:02  dispatch orca-worktree-flow-sub-repo/orca-worktree-flow.orca-check.login-api -- 너는 인증 담당이다
+09-10 15:40  review orca-worktree-flow-sub-repo/orca-worktree-flow.orca-check.login-api 1차 (커밋 3개)
+09-10 16:11  handback orca-worktree-flow-sub-repo/orca-worktree-flow.orca-check.login-api -- blocking 2건
+09-10 17:03  land orca-worktree-flow-sub-repo/orca-worktree-flow.orca-check.login-api -- main 에 머지, push 완료 (커밋 5개, 리뷰 2차)
 ```
 
 **결정 내용과 근거는 이 기록에도 남지 않는다.** 컨텍스트를 지우기 전에 파일로 기록한다.
