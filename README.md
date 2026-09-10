@@ -25,13 +25,13 @@
 /plugin install orca@orca-plugin
 ```
 
-**Orca 앱 쪽.** 마켓플레이스가 없으므로 클론한 뒤 로컬 경로로 등록한다.
+**Orca 앱 쪽.** 설정 → Plugins → 마켓플레이스 소스에서 Git URL로 `https://github.com/gilbertlim/orca-plugin`, ref로 `main`을 준다. 소스가 읽는 것은 루트의 `orca-marketplace.json`이고, 그 안에서 플러그인 자체는 태그(`v1.2.0`)에 고정돼 있다. `main`을 소스 ref로 두는 것은 새 판을 낼 때 마켓플레이스 파일만 고치면 되게 하려는 것이다.
+
+로컬 경로로 붙이려면 클론한 뒤 설정 → Plugins → Installed에서 그 디렉터리를 지정한다.
 
 ```bash
 git clone git@github.com:gilbertlim/orca-plugin.git ~/orca-plugin
 ```
-
-그다음 Orca에서 설정 → Plugins → Installed → 로컬 경로로 위 디렉터리를 지정한다.
 
 **프로젝트 쪽.** 쓸 프로젝트의 루트에 `.orca-flow.json`을 둔다. `templates/orca-flow.json`을 복사해 고치면 되고, 없으면 기본값을 사용한다.
 
@@ -418,6 +418,7 @@ print([hex(c) for c in sorted(set(c for c in b if c<9 or 13<c<32))] or '없음')
 ```
 .claude-plugin/     Claude Code 매니페스트와 마켓플레이스 (이 레포가 곧 마켓플레이스다)
 orca-plugin.json    Orca 앱 매니페스트
+orca-marketplace.json  Orca 앱 마켓플레이스 소스. 플러그인을 태그에 고정한다
 main.mjs            Orca 앱 워커
 bin/                스크립트. config.sh 가 설정을 읽고 lib.sh 가 Orca 를 감싼다
 commands/           슬래시 커맨드 다섯
