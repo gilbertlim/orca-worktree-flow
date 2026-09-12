@@ -84,7 +84,9 @@ if [ "${NO_SETUP:-}" = "1" ] || [ "$SETUP_ENABLED" = "false" ] || [ ! -x "$SETUP
 else
   printf 'gitignore된 파일을 메인 체크아웃에서 채운다\n'
   RC=0
-  "$SETUP" "$WT" || RC=$?
+  # 셋업 스크립트는 메인 체크아웃에서 상위로 올라가며 설정을 찾는다. 우산이 형제
+  # 디렉터리에 있으면 그 경로로는 닿지 않으므로 dispatch가 찾은 루트를 전달한다.
+  ORCA_FLOW_ROOT="${ORCA_FLOW_ROOT:-$PROJECT_ROOT}" "$SETUP" "$WT" || RC=$?
   if [ "$RC" = 75 ]; then
     # 75는 다른 실행이 잠금을 보유했다는 뜻이다. 종료를 기다린 뒤 완료 표식을 확인한다.
     # 다른 프로세스의 종료 코드는 직접 읽을 수 없다.
