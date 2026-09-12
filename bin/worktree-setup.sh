@@ -319,7 +319,7 @@ done < <(cfg_map_list setup.repoExtras "$REPO")
 if (( copied == 0 && skipped == 0 )); then
   note "복사할 항목이 없다"
 else
-  note "$copied개 복사, $skipped개 유지 (기존 파일 또는 Git 추적 대상)"
+  note "${copied}개 복사, ${skipped}개 유지 (기존 파일 또는 Git 추적 대상)"
 fi
 
 if (( DRY_RUN )); then
