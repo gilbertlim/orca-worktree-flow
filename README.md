@@ -20,7 +20,7 @@ Claude Code에서는 다음 명령으로 설치한다.
 /plugin install orca@orca-worktree-flow
 ```
 
-Orca 앱에서는 설정 → Plugins → 마켓플레이스 소스에 Git URL `https://github.com/gilbertlim/orca-worktree-flow`와 ref `main`을 입력한다. 앱은 루트의 `orca-marketplace.json`을 읽고, 그 파일에 지정된 태그(`v1.2.2`)의 플러그인을 설치한다. 소스 ref를 `main`으로 두면 새 버전 배포 시 마켓플레이스 파일에서 태그를 갱신할 수 있다.
+Orca 앱에서는 설정 → Plugins → 마켓플레이스 소스에 Git URL `https://github.com/gilbertlim/orca-worktree-flow`와 ref `main`을 입력한다. 앱은 루트의 `orca-marketplace.json`을 읽고, 그 파일에 지정된 태그(`v1.2.3`)의 플러그인을 설치한다. 소스 ref를 `main`으로 두면 새 버전 배포 시 마켓플레이스 파일에서 태그를 갱신할 수 있다.
 
 로컬 설치는 아래처럼 클론한 뒤 설정 → Plugins → Installed에서 해당 디렉터리를 지정한다.
 

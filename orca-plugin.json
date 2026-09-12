@@ -4,7 +4,7 @@
   "id": "worktree-flow",
   "publisher": "gilbertlim",
   "name": "Orca Worktree Flow",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Orca 워크트리 작업 관리를 위한 초기 설정과 에이전트 상태 알림",
   "author": {
     "name": "gilbert lim"
