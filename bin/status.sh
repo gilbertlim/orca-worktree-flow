@@ -99,6 +99,8 @@ n_closed=0
 self_ahead=0
 self_dirty=0
 self_base=""
+self_repo=""
+self_name=""
 
 n_total=0
 n_stale=0
@@ -209,6 +211,8 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
       self_ahead="${ahead:-0}"
       self_base="$base"
       self_dirty="${dirty:-0}"
+      self_repo="$repo"
+      self_name="$name"
       ;;
     *)
       if [ -n "$OWNER" ]; then
@@ -295,7 +299,17 @@ fi
 if [ -n "$OWNER" ] && [ "${self_ahead:-0}" != 0 ] && [ "${self_ahead:-?}" != '?' ] \
    && [ "${self_dirty:-0}" = 0 ]; then
   printf '이 우산 워크트리에도 %s 앞에 커밋 %s개가 있다.\n' "${self_base:-$BASE_BRANCH}" "$self_ahead"
-  printf '  land할지 사용자에게 묻는다. 이 워크트리 안에서 실행하면 삭제하지 않고 머지와 push만 한다.\n\n'
+  printf '  land할지 사용자에게 묻는다. 이 워크트리 안에서 실행하면 머지와 push만 하고 워크트리는 남긴다.\n'
+  printf '  지우기까지 하려면 그것도 같이 묻고, 확인되면 SELF_RM=1 을 붙인다.\n\n'
+fi
+
+# 소속 서브가 다 land돼 사라지고 우산도 기준 브랜치에 다 들어갔으면 이 워크트리는 할 일이 없다.
+# 사용자에게 "worktree rm 을 치라" 고 넘기지 않고, 지울지 물은 뒤 직접 지운다.
+if [ -n "$OWNER" ] && [ -n "$self_repo" ] && [ "${n_owned:-0}" = 0 ] \
+   && [ "${self_ahead:-0}" = 0 ] && [ "${self_dirty:-0}" = 0 ]; then
+  printf '이 우산 워크트리에는 land할 것이 더 없다.\n'
+  printf '  워크트리를 지울지 사용자에게 묻는다. 확인되면:\n'
+  printf '  SELF_RM=1 %s/bin/land.sh %s %s\n\n' "$PLUGIN_ROOT" "$self_repo" "$self_name"
 fi
 
 # 우산별 작업 이력을 표시한다. 세션을 이어받을 때 참고한다.

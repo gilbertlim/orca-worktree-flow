@@ -65,13 +65,11 @@ printf '%s' "$$" > "$CLAIM"
 trap 'rm -f "$CLAIM"' EXIT
 
 printf '워크트리를 만든다: %s/%s\n' "$REPO" "$NAME"
-# worktree create 는 첫 터미널(셸)을 함께 연다. 에이전트는 셋업 뒤 별도 탭에 띄우므로
-# 그 셸 탭은 에이전트 탭이 뜬 뒤 닫는다. 핸들이 없으면 닫지 않고 둔다.
-SHELL_H="$(orca worktree create \
+orca worktree create \
   --repo "name:$REPO" \
   --name "$NAME" \
   --base-branch "$BASE" \
-  --json 2>&1 | startup_handle)"
+  --json 2>&1 | orca_check
 
 require_worktree "$WT"
 
@@ -126,9 +124,11 @@ fi
 
 if [ -n "$H" ]; then
   save_handle "$REPO" "$NAME" work "$H"
-  if [ -n "$SHELL_H" ] && [ "$SHELL_H" != "$H" ]; then
-    orca terminal close --terminal "$SHELL_H" --tab --json >/dev/null 2>&1 || true
-  fi
+  # 앱이 새 워크트리에 기본 셸 탭을 열어 탭이 둘이 된다. create 결과에는 그 핸들이
+  # 없어서, 갓 만든 워크트리의 에이전트 아닌 터미널을 모두 닫는다.
+  for SH in $(orca terminal list --worktree "path:$WT" --json 2>/dev/null | other_handles "$H"); do
+    orca terminal close --terminal "$SH" --tab --json >/dev/null 2>&1 || true
+  done
   card "$WT" in-progress "에이전트 시작$NOTE"
 else
   card "$WT" in-progress "에이전트 시작 실패, Orca 탭 확인$NOTE"

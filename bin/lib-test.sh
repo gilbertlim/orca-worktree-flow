@@ -19,9 +19,8 @@ if printf '%s\n' "$out" | grep -q 'Non-blocking'; then echo "다음 절이 출�
 [ "$(blocking_count "$RF")" = 200 ] || { echo "blocking_count 가 틀렸다: $(blocking_count "$RF")"; exit 1; }
 [ "$(blocking_section "$RF" | wc -l | tr -d ' ')" = 202 ] || { echo "줄 수 제한이 없는 호출에서 절 일부가 누락됐다"; exit 1; }
 
-# worktree create 결과에서 첫 터미널 핸들만 뽑고, 없으면 빈 문자열이다.
-[ "$(printf '{"ok":true,"result":{"startupTerminal":{"handle":"t-1"}}}' | startup_handle)" = t-1 ] || { echo "startup_handle 이 핸들을 못 읽었다"; exit 1; }
-[ -z "$(printf '{"ok":true,"result":{}}' | startup_handle)" ] || { echo "startup_handle 이 없는 핸들을 지어냈다"; exit 1; }
-if printf '{"ok":false,"error":"x"}' | startup_handle 2>/dev/null; then echo "startup_handle 이 실패를 통과시켰다"; exit 1; fi
+# 에이전트 핸들만 빼고 나머지를 낸다. 형식이 다르면 아무것도 안 낸다.
+[ "$(printf '{"ok":true,"result":{"terminals":[{"handle":"a"},{"handle":"b"}]}}' | other_handles a)" = b ] || { echo "other_handles 가 틀렸다"; exit 1; }
+[ -z "$(printf '{"ok":false}' | other_handles a)" ] || { echo "other_handles 가 실패 응답에서 핸들을 냈다"; exit 1; }
 
 echo "ok"

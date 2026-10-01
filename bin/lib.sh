@@ -56,11 +56,13 @@ setup_script() {
 # 레포 displayName -> 메인 체크아웃 절대 경로
 repo_path() {
   orca repo list --json 2>/dev/null | python3 -c '
-import sys, json
+import sys, json, re
+# Windows 에서 도는 Orca 는 WSL 레포를 \\wsl.localhost\<distro>\... 로 준다. WSL 경로로 되돌린다.
+unc = lambda x: (lambda m: m.group(1).replace("\\", "/") if m else x)(re.match(r"^\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)$", x or ""))
 want = sys.argv[1]
 for r in json.load(sys.stdin)["result"]["repos"]:
     if r.get("displayName") == want:
-        print(r["path"])
+        print(unc(r["path"]))
         break
 ' "$1"
 }
@@ -72,7 +74,8 @@ for r in json.load(sys.stdin)["result"]["repos"]:
 REPO_PATHS=""
 repo_paths() {
   [ -n "$REPO_PATHS" ] || REPO_PATHS="$(orca repo list --json 2>/dev/null | python3 -c '
-import sys, json
+import sys, json, re
+unc = lambda x: (lambda m: m.group(1).replace("\\", "/") if m else x)(re.match(r"^\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)$", x or ""))
 try:
     d = json.load(sys.stdin)
 except Exception:
@@ -81,7 +84,7 @@ for r in d.get("result", {}).get("repos", []):
     # 탭으로 열을 구분하므로 값 안의 탭은 공백으로 바꾼다. TERMS, CARDS도 같은 규칙을 사용한다.
     print("%s\t%s\t%s" % (
         (r.get("displayName") or "").replace("\t", " "),
-        (r.get("path") or "").replace("\t", " "),
+        unc(r.get("path") or "").replace("\t", " "),
         r.get("projectGroupId") or "",
     ))
 ' || true)"
@@ -296,16 +299,18 @@ print(r.get("handle")
 '
 }
 
-# worktree create 결과에서 첫 터미널 핸들만 읽는다. 실패면 orca_check 처럼 멈춘다.
-startup_handle() {
+# terminal list 결과에서 주어진 핸들 말고 나머지 핸들을 한 줄씩. 읽지 못하면 아무것도 안 낸다.
+other_handles() { # keep-handle
   python3 -c '
 import sys, json
-d = json.load(sys.stdin)
-if not d.get("ok"):
-    sys.stderr.write(json.dumps(d.get("error", d), ensure_ascii=False) + "\n")
-    sys.exit(1)
-print(((d.get("result") or {}).get("startupTerminal") or {}).get("handle") or "")
-'
+try:
+    ts = json.load(sys.stdin)["result"]["terminals"]
+except Exception:
+    sys.exit(0)
+for t in ts:
+    if t.get("handle") and t["handle"] != sys.argv[1]:
+        print(t["handle"])
+' "$1"
 }
 
 # ---------------------------------------------------------------------------

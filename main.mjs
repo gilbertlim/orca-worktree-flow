@@ -216,22 +216,16 @@ async function notify(orca, title, body) {
 }
 
 /**
- * Windows 앱이 WSL 워크트리를 \\wsl.localhost\<배포판>\... 로 넘기므로 리눅스 경로로 바꾼다.
- * 바꾸지 않으면 모든 알림이 "워크트리 밖" 으로 떨어진다.
+ * 워크트리 id의 <repoId>::<path> 형식에서 경로를 추출한다.
+ * Windows 앱은 WSL 경로를 \\wsl.localhost\<배포판>\... 로 넘긴다. 알림에는 repo/name 만
+ * 쓰므로 형식을 바꾸지 않고 그대로 둔다.
  */
-function posixPath(path) {
-  const unc = /^\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)$/.exec(path)
-  return unc ? unc[1].replaceAll('\\', '/') : path
-}
-
-/** 워크트리 id의 <repoId>::<path> 형식에서 경로를 추출한다. */
 function pathFromWorktreeId(worktreeId) {
   if (typeof worktreeId !== 'string') {
     return null
   }
   const index = worktreeId.indexOf('::')
-  const path = posixPath(index >= 0 ? worktreeId.slice(index + 2) : '')
-  return path.startsWith('/') ? path : null
+  return index >= 0 && worktreeId.slice(index + 2) ? worktreeId.slice(index + 2) : null
 }
 
 /** <workspaces>/<repo>/<name>에서 repo/name을 추출한다. */
@@ -239,7 +233,7 @@ function worktreeLabel(path) {
   if (!path) {
     return null
   }
-  const match = /\/workspaces\/([^/]+)\/([^/]+)\/?$/.exec(path)
+  const match = /[\\/]workspaces[\\/]([^\\/]+)[\\/]([^\\/]+)[\\/]?$/.exec(path)
   return match ? { repo: match[1], name: match[2], label: `${match[1]}/${match[2]}` } : null
 }
 
@@ -251,7 +245,7 @@ function shortName(path) {
   if (!path) {
     return '워크트리 밖'
   }
-  return worktreeLabel(path)?.label ?? path.split('/').filter(Boolean).slice(-2).join('/')
+  return worktreeLabel(path)?.label ?? path.split(/[\\/]/).filter(Boolean).slice(-2).join('/')
 }
 
 /**
@@ -343,8 +337,8 @@ function alive(pid) {
  * dispatch, review와 에이전트가 작성한 카드 문구를 읽는다.
  * "FK 문제로 중단"처럼 커밋 수에 드러나지 않는 상태를 알림에 표시한다.
  */
-async function cardComment(orca, path) {
-  const shown = await run('orca', ['worktree', 'show', '--worktree', `path:${path}`, '--json'], {
+async function cardComment(orca, path, selector = `path:${path}`) {
+  const shown = await run('orca', ['worktree', 'show', '--worktree', selector, '--json'], {
     timeoutMs: 8_000
   })
   try {
@@ -563,7 +557,8 @@ export default function activate(orca) {
     }
     // 중단 사유가 담긴 카드 문구를 먼저 표시하고 리뷰 상태를 덧붙인다.
     const [comment, note] = await Promise.all([
-      cardComment(orca, path),
+      // 경로 형식이 앱과 CLI 사이에 달라도 맞도록 이벤트의 워크트리 id 로 찾는다.
+      cardComment(orca, path, `id:${payload.worktreeId}`),
       state === 'done' ? reviewNote(path) : Promise.resolve('')
     ])
     const body = [comment, note].filter(Boolean).join(', ')

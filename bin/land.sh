@@ -4,6 +4,7 @@
 #   land.sh <repo> <worktree-name>
 #   KEEP=1 land.sh <repo> <worktree-name>     push 후 워크트리 유지
 #   NO_PUSH=1 land.sh <repo> <worktree-name>  push 생략, 워크트리 유지
+#   SELF_RM=1 land.sh <repo> <worktree-name>  지금 서 있는 워크트리도 지운다 (사용자 확인 뒤)
 #
 # 우산 워크트리는 리뷰를 거치지 않아 판정 파일을 검사하지 않는다.
 # 우산 여부는 status.sh와 같은 owner_id로 판단한다.
@@ -121,13 +122,33 @@ else
   fi
 fi
 
-# 현재 작업 디렉터리는 삭제하지 않는다. 우산이 자기 변경을 land할 때
-# 워크트리를 삭제하면 호출한 셸의 cwd도 사라진다.
+# 현재 작업 디렉터리는 바로 지우지 않는다. 우산이 자기 변경을 land할 때
+# 워크트리를 지우면 호출한 셸의 cwd와 그 안에서 도는 에이전트 세션이 같이 사라진다.
+# SELF_RM=1이면 사용자가 확인한 것으로 보고, 세션이 마무리 응답을 낼 시간을 둔 뒤
+# 떨어져 나간 프로세스가 지운다. Orca가 그 워크트리의 터미널을 닫으며 세션도 끝난다.
 SELF=0
 case "$PWD/" in "$WT"/*) SELF=1 ;; esac
 if [ "$SELF" = 1 ] && [ "${KEEP:-}" != "1" ] && [ "$PUSHED" != skip ]; then
+  if [ "${SELF_RM:-}" = "1" ]; then
+    DELAY="${SELF_RM_DELAY:-20}"
+    LOG="$(dirname "$(journal_file)")/self-rm.$REPO.$NAME.log"
+    mkdir -p "$(dirname "$LOG")"
+    # setsid로 세션에서 떼어 낸다. 터미널이 닫혀도 삭제가 끝까지 간다.
+    setsid nohup bash -c '
+      sleep "$1"; cd /
+      orca worktree rm --worktree "path:$2" --force --json
+      git -C "$3" branch -d "$4" || true
+      rm -f "$5" "$6"
+    ' _ "$DELAY" "$WT" "$MAIN" "$BRANCH" \
+      "$(handle_file "$REPO" "$NAME" work)" "$(handle_file "$REPO" "$NAME" review)" \
+      >"$LOG" 2>&1 < /dev/null &
+    journal "land $REPO/$NAME -- 자기 워크트리 삭제 예약 (${DELAY}초 뒤)"
+    printf '이 워크트리를 %s초 뒤에 지운다. 이 안의 터미널과 세션도 같이 닫힌다.\n' "$DELAY"
+    printf '마무리 보고는 지금 바로 한다. 삭제 기록: %s\n' "$LOG"
+    exit 0
+  fi
   printf '이 워크트리 안에서 부르고 있다. 지우지 않고 남긴다.\n'
-  printf '지우려면 밖에서 부른다: orca worktree rm --worktree "path:%s" --force\n' "$WT"
+  printf '지울지 사용자에게 묻고, 확인되면 SELF_RM=1 을 붙여 같은 명령을 다시 부른다.\n'
   KEEP=1
 fi
 
