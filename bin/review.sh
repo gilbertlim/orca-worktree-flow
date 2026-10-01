@@ -128,7 +128,7 @@ if [ -n "$H" ]; then
   save_handle "$REPO" "$NAME" review "$H"
   card "$WT" in-review "리뷰 ${ROUND}차 (커밋 ${AHEAD}개)"
 else
-  card "$WT" in-review "리뷰어 시작 실패 -- Orca에서 탭 확인"
+  card "$WT" in-review "리뷰어 시작 실패, Orca 탭 확인"
 fi
 
 journal "review $REPO/$NAME ${ROUND}차 (커밋 ${AHEAD}개)"

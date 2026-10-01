@@ -86,8 +86,8 @@ const REVIEWS = expandHome(hostData.reviews) || join(HOME, 'orca', 'reviews')
 const ANSI_RE = /\u001b\[[0-9;?]*[a-zA-Z]/g
 const stripAnsi = (text) => text.replace(ANSI_RE, '')
 
-/** 배너가 몇 줄만 표시하므로 알림 본문의 줄 수를 제한한다. */
-const BODY_LINES = 4
+/** 알림 본문은 한 줄이다. 빌드 로그는 오류가 있는 마지막 줄만 남는다. */
+const BODY_LINES = 1
 
 /**
  * 알림에서 렌더링되지 않는 마크다운과 구분선을 제거한다.
@@ -197,7 +197,7 @@ function run(file, args, { cwd, env, timeoutMs, killOnTimeout = true, onLateExit
 }
 
 /**
- * 알림 제목은 <워크트리> — <상태> 순서로 작성해 대상을 먼저 확인할 수 있게 한다.
+ * 알림 제목은 [<워크트리>] <상태> 순서로 작성해 대상을 먼저 확인할 수 있게 한다.
  * 특정 워크트리가 없는 status나 setup 오류는 상태만 표시한다.
  * 본문은 평문이며 비례폭 글꼴을 사용하므로 마크다운 표나 코드 정렬을 사용하지 않는다.
  * status는 집계만 표시하고 배너에서 잘리지 않도록 짧게 작성한다.
@@ -215,13 +215,22 @@ async function notify(orca, title, body) {
   }
 }
 
+/**
+ * Windows 앱이 WSL 워크트리를 \\wsl.localhost\<배포판>\... 로 넘기므로 리눅스 경로로 바꾼다.
+ * 바꾸지 않으면 모든 알림이 "워크트리 밖" 으로 떨어진다.
+ */
+function posixPath(path) {
+  const unc = /^\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)$/.exec(path)
+  return unc ? unc[1].replaceAll('\\', '/') : path
+}
+
 /** 워크트리 id의 <repoId>::<path> 형식에서 경로를 추출한다. */
 function pathFromWorktreeId(worktreeId) {
   if (typeof worktreeId !== 'string') {
     return null
   }
   const index = worktreeId.indexOf('::')
-  const path = index >= 0 ? worktreeId.slice(index + 2) : ''
+  const path = posixPath(index >= 0 ? worktreeId.slice(index + 2) : '')
   return path.startsWith('/') ? path : null
 }
 
@@ -390,7 +399,7 @@ async function runSetup(orca, path, { origin }) {
   const standDown = async (headline, reason, body) => {
     orca.log(`${reason}: ${path}`)
     if (byHand) {
-      await notify(orca, `${shortName(path)} — ${headline}`, body ?? reason)
+      await notify(orca, `[${shortName(path)}] ${headline}`, body ?? reason)
     }
   }
 
@@ -398,11 +407,11 @@ async function runSetup(orca, path, { origin }) {
     return { ok: false, reason: 'no-path' }
   }
   if (inflight.has(path)) {
-    await standDown('셋업 실행 중', '이미 실행 중', '완료 후 카드와 알림을 확인한다.')
+    await standDown('셋업 실행 중', '이미 실행 중', '끝나면 알림')
     return { ok: false, reason: 'inflight' }
   }
   if (!(await waitForDir(path, 15_000))) {
-    await standDown('초기 설정 대상 워크트리가 없다', '워크트리 디렉터리가 생성되지 않았다', '15초 안에 디렉터리가 생성되지 않았다.')
+    await standDown('워크트리 없음', '워크트리 디렉터리가 생성되지 않았다', '15초 안에 디렉터리가 안 생김')
     return { ok: false, reason: 'missing' }
   }
 
@@ -411,9 +420,9 @@ async function runSetup(orca, path, { origin }) {
   const setup = project?.data?.setup ?? {}
   if (setup.enabled === false) {
     await standDown(
-      '셋업이 비활성화됐다',
+      '셋업 비활성화됨',
       '프로젝트에서 셋업을 비활성화했다 (setup.enabled=false)',
-      `${project.file}: setup.enabled가 false로 설정되어 있다.`
+      `${project.file}: setup.enabled=false`
     )
     return { ok: true, reason: 'disabled' }
   }
@@ -424,7 +433,7 @@ async function runSetup(orca, path, { origin }) {
         : join(project.root, setup.script)
       : SETUP_SCRIPT
   if (!existsSync(script)) {
-    await standDown('셋업 스크립트가 없다', '셋업 스크립트를 찾지 못했다', script)
+    await standDown('셋업 스크립트 없음', '셋업 스크립트를 찾지 못했다', script)
     return { ok: false, reason: 'no-script' }
   }
 
@@ -456,12 +465,12 @@ async function runSetup(orca, path, { origin }) {
       .catch(() => undefined)
 
     if (result.timedOut) {
-      await stampCard(orca, path, '셋업 대기 시간 초과 — 백그라운드에서 계속 실행 중이다')
-      await notify(orca, `${name} — 셋업 대기 시간 초과`, '백그라운드에서 계속 실행 중이다. 완료 후 빌드를 실행한다.')
+      await stampCard(orca, path, '셋업 대기 시간 초과, 백그라운드 실행 중')
+      await notify(orca, `[${name}] 셋업 대기 시간 초과`, '백그라운드 실행 중, 완료 후 빌드 실행')
     } else if (result.code === SETUP_LOCKED) {
       // 진행 상태는 잠금을 보유한 실행이 표시한다. 생성 이벤트는 claim에서 이미
       // 걸러지므로 이 경로에서는 직접 실행한 명령의 중복을 안내한다.
-      await standDown('다른 프로세스에서 셋업 실행 중', '다른 프로세스가 잠금 보유 중', '해당 실행이 끝난 뒤 다시 시도한다.')
+      await standDown('다른 프로세스에서 셋업 실행 중', '다른 프로세스가 잠금 보유 중', '그 실행이 끝난 뒤 다시 시도')
     } else if (result.code === 0) {
       // 도구 누락으로 의존성을 설치하지 못했다면 초기 설정 완료와 함께 안내한다.
       // 그렇지 않으면 node_modules가 없어 나중에 빌드가 실패할 수 있다.
@@ -469,20 +478,20 @@ async function runSetup(orca, path, { origin }) {
       if (skipped.length) {
         await notify(
           orca,
-          `${name} — 셋업 완료`,
-          `${skipped.join(', ')} 도구가 없어 의존성 설치를 건너뛰었다. 직접 설치한다.`
+          `[${name}] 셋업 완료`,
+          `${skipped.join(', ')} 없음, 직접 설치 필요`
         )
       } else if (byHand) {
         // 직접 실행한 경우에만 완료를 알린다. 자동 성공 알림이 반복돼 실패 알림을 놓치지 않게 한다.
-        await notify(orca, `${name} — 셋업 완료`, '초기 설정이 완료됐다. 빌드와 실행을 진행한다.')
+        await notify(orca, `[${name}] 셋업 완료`, '초기 설정 완료, 빌드 실행 진행')
       } else {
         orca.log(`setup 완료, 알림 생략: ${path}`)
       }
     } else {
-      await stampCard(orca, path, '셋업 실패 — 빌드 전에 직접 확인한다')
+      await stampCard(orca, path, '셋업 실패, 빌드 전 확인 필요')
       // 본문 끝의 빈 줄을 제거한다. 400자 제한으로 줄 중간이 잘릴 수 있어 자른 뒤에도 공백을 정리한다.
       const detail = result.tail.trim().slice(-400).trim()
-      await notify(orca, `${name} — 셋업 실패`, detail || `종료 코드 ${result.code}`)
+      await notify(orca, `[${name}] 셋업 실패`, detail || `종료 코드 ${result.code}`)
     }
     return { ok: result.code === 0, code: result.code, timedOut: Boolean(result.timedOut) }
   } finally {
@@ -522,7 +531,7 @@ function summaryBody(counts) {
     counts.no_terminal ? `터미널 없음 ${counts.no_terminal}` : ''
   ].filter(Boolean)
   const lines = [review.join(', '), work.join(', ')].filter(Boolean)
-  return lines.length ? lines.join('\n') : '모든 워크트리의 리뷰가 완료됐다.'
+  return lines.length ? lines.join(', ') : '모든 워크트리 리뷰 완료'
 }
 
 /** 확인이 필요한 상태만 알린다. working은 알리지 않는다. */
@@ -549,7 +558,7 @@ export default function activate(orca) {
     }
     const path = pathFromWorktreeId(payload?.worktreeId)
     if (!path) {
-      await notify(orca, `워크트리 밖 — ${NOTIFY_STATES[state]}`)
+      await notify(orca, `[워크트리 밖] ${NOTIFY_STATES[state]}`)
       return
     }
     // 중단 사유가 담긴 카드 문구를 먼저 표시하고 리뷰 상태를 덧붙인다.
@@ -557,8 +566,8 @@ export default function activate(orca) {
       cardComment(orca, path),
       state === 'done' ? reviewNote(path) : Promise.resolve('')
     ])
-    const body = [comment, note].filter(Boolean).join('\n')
-    await notify(orca, `${shortName(path)} — ${NOTIFY_STATES[state]}`, body)
+    const body = [comment, note].filter(Boolean).join(', ')
+    await notify(orca, `[${shortName(path)}] ${NOTIFY_STATES[state]}`, body)
   })
 
   /** 초기 설정 재실행은 명령의 30초 제한을 넘길 수 있어 즉시 반환하고 결과는 알림으로 보낸다. */
@@ -575,7 +584,7 @@ export default function activate(orca) {
       }
     }
     if (!path) {
-      await notify(orca, '초기 설정 대상 워크트리를 확인할 수 없다', '워크트리를 열고 다시 실행한다.')
+      await notify(orca, '셋업할 워크트리를 못 찾음', '워크트리를 연 뒤 다시 실행')
       return { started: false }
     }
     void runSetup(orca, path, { origin: 'command' })
@@ -592,11 +601,11 @@ export default function activate(orca) {
     const counts = parseCounts(result.out)
     if (!counts) {
       // 함께 배포하는 status.sh에 집계 블록이 없으면 실행 실패로 보고 로그 확인을 안내한다.
-      await notify(orca, '워크트리 현황 조회 실패', 'status.sh 출력이 예상과 다르다. 플러그인 로그를 확인한다.')
+      await notify(orca, '워크트리 현황 조회 실패', 'status.sh 출력 형식이 다름, 플러그인 로그 확인')
       return { ok: false }
     }
     if (!counts.worktrees) {
-      await notify(orca, `워크트리 현황${missing}`, '워크트리가 없다.')
+      await notify(orca, `워크트리 현황${missing}`, '워크트리 없음')
       return { ok: result.code === 0 }
     }
     await notify(orca, `워크트리 ${counts.worktrees}개${missing}`, summaryBody(counts))

@@ -62,9 +62,9 @@ fi
 # 수정 요청을 전달한 뒤 카드를 작업 상태로 바꾼다.
 # 이전 판정 대신 현재 상태를 표시하며, 메시지 전송에 실패하면 여기까지 실행되지 않는다.
 if [ "${BLOCKING:-0}" -gt 0 ]; then
-  card "$WT" in-progress "재작업 -- 리뷰 blocking 반영"
+  card "$WT" in-progress "재작업: 리뷰 blocking 반영"
 else
-  card "$WT" in-progress "재작업 -- 리뷰 지적 반영"
+  card "$WT" in-progress "재작업: 리뷰 지적 반영"
 fi
 
 journal "handback $REPO/$NAME -- blocking ${BLOCKING:-0}건"

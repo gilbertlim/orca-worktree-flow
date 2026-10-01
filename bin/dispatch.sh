@@ -65,11 +65,13 @@ printf '%s' "$$" > "$CLAIM"
 trap 'rm -f "$CLAIM"' EXIT
 
 printf '워크트리를 만든다: %s/%s\n' "$REPO" "$NAME"
-orca worktree create \
+# worktree create 는 첫 터미널(셸)을 함께 연다. 에이전트는 셋업 뒤 별도 탭에 띄우므로
+# 그 셸 탭은 에이전트 탭이 뜬 뒤 닫는다. 핸들이 없으면 닫지 않고 둔다.
+SHELL_H="$(orca worktree create \
   --repo "name:$REPO" \
   --name "$NAME" \
   --base-branch "$BASE" \
-  --json 2>&1 | orca_check
+  --json 2>&1 | startup_handle)"
 
 require_worktree "$WT"
 
@@ -98,7 +100,7 @@ else
     printf '  셋업이 완료되지 않았다. 빌드 전에 직접 확인한다.\n' >&2
     # 초기 설정 실패를 카드에 기록한다. 에이전트 시작 문구에도 실패를 포함해야
     # 빌드할 수 없는 상태가 정상으로 표시되지 않는다.
-    card "$WT" "" "셋업 실패 -- 빌드 전에 직접 확인한다"
+    card "$WT" "" "셋업 실패, 빌드 전 확인 필요"
     SETUP_FAILED=1
   fi
 fi
@@ -119,14 +121,17 @@ H="$(orca terminal create \
 # 카드는 전체를 덮어쓰므로 초기 설정 실패도 시작 문구에 포함한다.
 NOTE=""
 if [ "${SETUP_FAILED:-0}" = 1 ]; then
-  NOTE=" -- 셋업 실패, 빌드 전에 직접 확인한다"
+  NOTE=", 셋업 실패 (빌드 전 확인 필요)"
 fi
 
 if [ -n "$H" ]; then
   save_handle "$REPO" "$NAME" work "$H"
+  if [ -n "$SHELL_H" ] && [ "$SHELL_H" != "$H" ]; then
+    orca terminal close --terminal "$SHELL_H" --tab --json >/dev/null 2>&1 || true
+  fi
   card "$WT" in-progress "에이전트 시작$NOTE"
 else
-  card "$WT" in-progress "에이전트 시작 실패 -- Orca에서 탭 확인$NOTE"
+  card "$WT" in-progress "에이전트 시작 실패, Orca 탭 확인$NOTE"
 fi
 
 journal "dispatch $REPO/$NAME -- $(head -1 "$PROMPT_FILE" | cut -c1-80)"

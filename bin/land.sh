@@ -96,7 +96,7 @@ fi
 
 if [ "$PUSHED" = 0 ]; then
   # 머지는 완료됐지만 push는 실패한 상태를 카드에 기록해 남은 작업을 표시한다.
-  card "$WT" "" "머지됨, push 실패 -- 직접 올린다"
+  card "$WT" "" "머지됨, push 실패, 직접 push 필요"
   journal "land $REPO/$NAME -- $BASE 에 머지, push 실패"
   printf 'push에 실패했다. 복구할 수 있도록 워크트리를 유지한다.\n' >&2
   # 실패 시 직접 실행할 push와 워크트리 정리 명령을 안내한다.
@@ -109,7 +109,7 @@ fi
 # push를 생략하면 워크트리를 유지한다. 작업 브랜치가 있어야
 # 로컬 기준 브랜치에 반영한 변경을 나중에 구분하고 복구하기 쉽다.
 if [ "$PUSHED" = skip ]; then
-  card "$WT" "" "머지됨, push 건너뜀 -- 로컬 $BASE 에만"
+  card "$WT" "" "머지됨, push 건너뜀 (로컬 $BASE 에만)"
   journal "land $REPO/$NAME -- 로컬 $BASE 에 머지 (커밋 ${AHEAD}개, push 건너뜀)"
 else
   card "$WT" completed "$BASE 에 머지, push 완료"

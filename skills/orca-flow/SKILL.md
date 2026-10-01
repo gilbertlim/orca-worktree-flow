@@ -114,7 +114,7 @@ Orca 카드는 코멘트 한 줄과 보드 상태(`todo`, `in-progress`, `in-rev
 | 에이전트의 작업 단계가 바뀔 때 | 유지 | 에이전트가 작성한 한 줄 |
 | review가 리뷰어를 실행한 뒤 | `in-review` | 리뷰 N차 (커밋 M개) |
 | 리뷰 판정 파일을 작성한 뒤 | 유지 | 리뷰: blocking N건, 또는 리뷰 통과 |
-| handback이 수정을 요청한 뒤 | `in-progress` | 재작업 -- 리뷰 blocking 반영 |
+| handback이 수정을 요청한 뒤 | `in-progress` | 재작업: 리뷰 blocking 반영 |
 | land가 push를 마친 뒤 | `completed` | 기준 브랜치에 머지, push 완료 |
 
 dispatch와 handback은 카드 갱신 지시를 프롬프트에 추가한다. 에이전트는 “테스트 실행 중”, “FK 문제로 중단”처럼 커밋 수로 알 수 없는 상태를 기록한다. CLI에는 알림 명령이 없으므로 앱 플러그인이 에이전트 중단 이벤트를 받아 카드 문구를 본문 첫 줄로 데스크톱 알림에 표시한다.

@@ -226,7 +226,7 @@ dispatch는 초기 설정을 마친 뒤 에이전트를 실행한다. 앱 플러
 | 작업 에이전트의 상태가 바뀔 때 | 유지 | 에이전트가 작성한 한 줄 |
 | review가 리뷰어를 실행한 뒤 | `in-review` | 리뷰 N차 (커밋 M개) |
 | 리뷰어가 판정 파일을 작성한 뒤 | 유지 | 리뷰: blocking N건, 또는 리뷰 통과 |
-| handback이 수정을 요청한 뒤 | `in-progress` | 재작업 -- 리뷰 blocking 반영 |
+| handback이 수정을 요청한 뒤 | `in-progress` | 재작업: 리뷰 blocking 반영 |
 | land가 push를 마친 뒤 | `completed` | 머지, push 완료 |
 
 에이전트는 “테스트 실행 중”, “FK 문제로 중단”처럼 커밋 수로 알 수 없는 상태를 작성한다. dispatch와 handback이 이 지시를 프롬프트에 추가한다. 이전에는 Git을 2초마다 조회하는 별도 워처를 사용했지만, 커밋 수와 미커밋 수만으로는 이런 상태를 알 수 없었다.

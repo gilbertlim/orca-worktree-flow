@@ -214,6 +214,8 @@ orca worktree set --worktree \"path:$1\" --comment \"<지금 무엇을 하고 �
 \`\`\`
 
 재현, 구현, 검증, 입력 대기, 인계 등 상태가 바뀔 때 현재 상황만 짧게 기록한다.
+이 줄은 알림 본문에 그대로 뜬다. 명사형 한 줄로 쓰고 마침표, 대시(—, --), \"~다\" 체를 쓰지 않는다.
+예: \`구현 중\`, \`테스트 실패 원인 확인 중\`, \`입력 대기: DB 비밀번호\`, \`구현 완료, 커밋함\`
 커밋 수와 파일 수는 status가 집계하므로 반복해서 적지 않는다."
 }
 
@@ -291,6 +293,18 @@ print(r.get("handle")
       or r.get("agentTerminalHandle")
       or (r.get("startupTerminal") or {}).get("handle")
       or "")
+'
+}
+
+# worktree create 결과에서 첫 터미널 핸들만 읽는다. 실패면 orca_check 처럼 멈춘다.
+startup_handle() {
+  python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if not d.get("ok"):
+    sys.stderr.write(json.dumps(d.get("error", d), ensure_ascii=False) + "\n")
+    sys.exit(1)
+print(((d.get("result") or {}).get("startupTerminal") or {}).get("handle") or "")
 '
 }
 
