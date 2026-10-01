@@ -34,4 +34,10 @@ if ( RAM_GATE_MB=$((avail + 100000)) ram_gate ) 2>/dev/null; then echo "가용�
 if grep -n 'mktemp -t' "$(dirname "${BASH_SOURCE[0]}")"/*.sh | grep -v 'lib-test.sh'; then echo "GNU 에서 죽는 mktemp -t 가 있다"; exit 1; fi
 for n in dispatch handback review; do f="$(mktemp "${TMPDIR:-/tmp}/orca-$n.XXXXXX")" && rm -f "$f" || { echo "mktemp 템플릿이 실패했다"; exit 1; }; done
 
+# file_mtime 은 GNU 와 BSD 어느 stat 에서나 정수 하나다.
+m="$(file_mtime "$RF")"
+case "$m" in ''|*[!0-9]*) echo "file_mtime 이 정수를 안 냈다: $m"; exit 1 ;; esac
+[ "$m" -gt 0 ] || { echo "file_mtime 이 0 이다"; exit 1; }
+if grep -n 'stat -f' "$(dirname "${BASH_SOURCE[0]}")"/*.sh | grep -v 'lib.sh\|lib-test.sh'; then echo "file_mtime 을 안 거친 stat -f 가 있다"; exit 1; fi
+
 echo "ok"

@@ -116,7 +116,10 @@ repo_paths >/dev/null
 
 # preview는 TUI 마지막 줄이다. 추가 호출 없이 실행 여부를 확인한다.
 TERMS="$(orca terminal list --json 2>/dev/null | python3 -c '
-import sys, json
+import sys, json, re
+# Windows 에서 도는 Orca 는 WSL 워크트리를 \\wsl.localhost\<distro>\... 로 준다. 리눅스 경로와 비교하려고
+# 되돌린다(lib.sh 의 repo_path 와 같은 변환). 안 되돌리면 터미널이 늘 "없음" 이고 카드 문구도 안 붙는다.
+unc = lambda x: (lambda m: m.group(1).replace("\\", "/") if m else x)(re.match(r"^\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)$", x or ""))
 try:
     d = json.load(sys.stdin)
 except Exception:
@@ -127,7 +130,7 @@ for t in d.get("result", {}).get("terminals", []):
     # 값이 JSON null 로 오는 때가 있다(에이전트가 쉬면 Orca가 제목을 안 준다).
     # get 의 기본값은 키가 있고 값이 null 이면 안 걸린다.
     print("%s\t%s\t%s\t%s" % (
-        t.get("worktreePath") or "",
+        unc(t.get("worktreePath") or ""),
         t.get("handle") or "",
         (t.get("title") or "").replace("\t", " "),
         (t.get("preview") or "").replace("\t", " "),
@@ -136,7 +139,8 @@ for t in d.get("result", {}).get("terminals", []):
 
 # 에이전트가 작성한 카드 문구. 테스트나 FK 문제처럼 Git 조회로 알 수 없는 상태를 표시한다.
 CARDS="$(orca worktree list --json 2>/dev/null | python3 -c '
-import sys, json
+import sys, json, re
+unc = lambda x: (lambda m: m.group(1).replace("\\", "/") if m else x)(re.match(r"^\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)$", x or ""))
 try:
     d = json.load(sys.stdin)
 except Exception:
@@ -144,7 +148,7 @@ except Exception:
 for w in d.get("result", {}).get("worktrees", []):
     c = (w.get("comment") or "").replace("\n", " ").strip()
     if c:
-        print("%s\t%s\t%s" % (w.get("path") or "", w.get("workspaceStatus") or "", c))
+        print("%s\t%s\t%s" % (unc(w.get("path") or ""), w.get("workspaceStatus") or "", c))
 ' || true)"
 
 if [ -n "$OWNER" ]; then
@@ -199,7 +203,7 @@ for dir in "$ORCA_WORKSPACES"/*/*; do
     # 이전 판정만 보관돼 있고 새 판정이 없으면 다음 리뷰가 진행 중이다.
     review="$((rounds + 1))차 중"
   else
-    rt="$(stat -f %m "$rf" 2>/dev/null || stat -c %Y "$rf" 2>/dev/null || echo 0)"
+    rt="$(file_mtime "$rf")"
     ct="$(git -C "$dir" log -1 --format=%ct 2>/dev/null || echo 0)"
     if [ "$rt" -lt "$ct" ]; then review="${rounds}차 낡음"; else review="${rounds}차"; fi
   fi

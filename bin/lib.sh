@@ -398,6 +398,12 @@ archive_review() { # repo name
   mv "$out" "$(round_file "$1" "$2" "$((n + 1))")"
 }
 
+# 파일의 수정 시각(epoch 초). GNU(리눅스, WSL)는 -c, BSD(맥)는 -f 다. GNU 에 -f 를 먼저 주면 실패하지
+# 않고 파일시스템 정보를 통째로 찍어서, 그 뒤의 정수 비교가 깨지고 리뷰 최신 여부가 틀렸다.
+file_mtime() {
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
+}
+
 # 터미널 상태는 돎, 막힘, 쉼으로 구분한다.
 # preview의 스피너와 토큰 속도로 실행 중인지 먼저 확인한다.
 # 쉬는 것으로 보일 때는 tail에서 입력 대기를 구분해 승인을 놓치지 않게 한다.
