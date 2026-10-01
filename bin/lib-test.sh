@@ -23,4 +23,11 @@ if printf '%s\n' "$out" | grep -q 'Non-blocking'; then echo "다음 절이 출�
 [ "$(printf '{"ok":true,"result":{"terminals":[{"handle":"a"},{"handle":"b"}]}}' | other_handles a)" = b ] || { echo "other_handles 가 틀렸다"; exit 1; }
 [ -z "$(printf '{"ok":false}' | other_handles a)" ] || { echo "other_handles 가 실패 응답에서 핸들을 냈다"; exit 1; }
 
+# 램 게이트: 이 기기에서 가용을 재고, 문턱 0 은 끄고, 못 넘는 문턱은 막는다(서브셸에서 die).
+avail="$(avail_mb)"
+case "$avail" in ''|*[!0-9]*) echo "avail_mb 가 숫자를 안 냈다: $avail"; exit 1 ;; esac
+( RAM_GATE_MB=0 ram_gate ) || { echo "RAM_GATE_MB=0 인데 막았다"; exit 1; }
+( RAM_GATE_MB=1 ram_gate ) || { echo "문턱 1MB 를 못 넘었다"; exit 1; }
+if ( RAM_GATE_MB=$((avail + 100000)) ram_gate ) 2>/dev/null; then echo "가용보다 큰 문턱을 안 막았다"; exit 1; fi
+
 echo "ok"

@@ -203,6 +203,7 @@ handback과 review는 blocking이 없어질 때까지 반복하되 리뷰 횟수
 | `setup.deny` | 없음 | 워크트리로 분리하지 않을 레포 |
 | `review.context` | 없음 | 기본 리뷰 프롬프트에 추가할 내용. 여러 줄이나 리뷰 기준 파일의 절대 경로 사용 가능 |
 | `review.maxRounds` | `5` | 리뷰 상한. 초과하면 남은 blocking을 출력하고 중단. `MAX_ROUNDS=`로 일회 변경, `FORCE=1`로 초과 실행 |
+| `ramGate.minMb` | `1500` | dispatch, review, handback 이 claude 세션을 새로 띄우기 전 가용 램 문턱(MB). 아래면 막는다. `0`이면 끈다. `RAM_GATE_MB=`로 일회 변경 |
 | `promptTemplate` | 플러그인의 `templates/prompt-template.md` | dispatch 프롬프트 템플릿 |
 
 설정 파일은 기준 디렉터리에서 상위로 올라가며 찾는다. 직접 실행할 때는 `$PWD`, 워크트리 초기 설정에서는 메인 체크아웃이 기준이다. 워크트리는 프로젝트 트리 밖에 있으므로 그 경로에서 검색하면 프로젝트 설정을 찾지 못한다. 메인 체크아웃을 기준으로 검색하면 단일 레포 프로젝트와 우산 아래 여러 레포가 있는 프로젝트를 모두 지원할 수 있다.

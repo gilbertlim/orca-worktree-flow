@@ -444,3 +444,60 @@ blocking_section() { # review-file [max-lines]
 blocking_count() { # review-file
   blocking_section "$1" | awk '/^[-*+] |^[0-9]+\. |^#{3,} / { n++ } END { print n + 0 }'
 }
+
+# ---------------------------------------------------------------------------
+# 램 게이트. dispatch, review, handback 이 claude 세션을 새로 띄우기 직전에 부른다.
+# 세션 하나가 0.3~0.45GB 이고 끝나도 터미널이 살아 있으면 그대로 쥔다. 6GB 를 받은 WSL 에서
+# 세션 여덟에 빌드 둘이 겹쳐 가용이 0.6GB 까지 내려간 일이 있어 띄우기 전에 막는다.
+# 문턱은 RAM_GATE_MB > 설정 ramGate.minMb > 1500. 0 이면 끈다. 가용을 못 재면 막지 않는다.
+
+# 가용 램(MB). 리눅스와 WSL 은 /proc/meminfo, 맥은 vm_stat, 윈도우는 GlobalMemoryStatusEx.
+# WSL 은 /proc/meminfo 를 먼저 봐야 윈도우 호스트가 아니라 WSL VM 몫을 잰다.
+avail_mb() {
+  python3 -c '
+import re, subprocess
+
+def linux():
+    with open("/proc/meminfo") as f:
+        for line in f:
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) // 1024
+
+def mac():
+    out = subprocess.run(["vm_stat"], capture_output=True, text=True).stdout
+    size = int(re.search(r"page size of (\d+)", out).group(1))
+    pages = lambda k: int(re.search(k + r":\s+(\d+)", out).group(1))
+    return (pages("Pages free") + pages("Pages inactive") + pages("Pages speculative")) * size // 1048576
+
+def windows():
+    import ctypes
+    class Status(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong)] + \
+                   [(n, ctypes.c_ulonglong) for n in ("total", "avail", "tpage", "apage", "tvirt", "avirt", "aext")]
+    s = Status()
+    s.dwLength = ctypes.sizeof(Status)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(s))
+    return s.avail // 1048576
+
+for probe in (linux, mac, windows):
+    try:
+        mb = probe()
+    except Exception:
+        continue
+    if mb:
+        print(mb)
+        break
+' 2>/dev/null
+}
+
+ram_gate() {
+  local need avail
+  need="${RAM_GATE_MB:-$(cfg_get ramGate.minMb 1500)}"
+  [ "$need" -gt 0 ] 2>/dev/null || return 0
+  avail="$(avail_mb)"
+  [ -n "$avail" ] || return 0
+  [ "$avail" -lt "$need" ] || return 0
+  die "가용 램 ${avail}MB 가 문턱 ${need}MB 아래라 새 에이전트를 띄우지 않는다.
+먼저 끝난 에이전트와 리뷰어의 터미널을 닫는다: orca terminal list, orca terminal close --terminal <handle>
+빌드나 테스트가 도는 중이면 끝난 뒤 부른다. 사용자가 허락하면 RAM_GATE_MB=0 을 앞에 붙여 한 번 넘긴다."
+}

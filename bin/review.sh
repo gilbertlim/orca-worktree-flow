@@ -114,6 +114,9 @@ if [ "${NEW:-}" != "1" ] && EXIST="$(load_handle "$REPO" "$NAME" review 2>/dev/n
   exit 0
 fi
 
+# 새 세션을 띄울 때만 본다. 살아 있는 리뷰어에게 보내는 위 길은 램을 더 안 쓴다.
+ram_gate
+
 printf '리뷰어를 띄운다: %s/%s (%s차, 커밋 %s개)\n' "$REPO" "$NAME" "$ROUND" "$AHEAD"
 TMP="$(mktemp -t orca-review)"
 printf '%s%s\n' "$BODY" "$OUT_RULE" > "$TMP"

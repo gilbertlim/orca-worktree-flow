@@ -57,6 +57,9 @@ WT="$(worktree_path "$REPO" "$NAME")"
 [ -d "$WT" ] && die "이미 있는 워크트리다: $WT
 이어서 붙이려면 review 나 orca terminal create 를 쓴다."
 
+# 워크트리를 만들기 전에 막는다. 만든 뒤 막히면 빈 워크트리만 남는다.
+ram_gate
+
 # 생성 이벤트 전에 claim을 기록해 플러그인의 중복 실행을 막는다.
 # dispatch가 초기 설정을 동기 실행한 뒤 에이전트를 시작하는 순서를 보장한다.
 CLAIM="$(claim_file "$REPO" "$NAME")"
