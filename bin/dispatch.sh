@@ -108,7 +108,7 @@ fi
 
 printf '에이전트를 띄운다: %s\n' "$AGENT_CMD"
 # 카드 갱신 지시가 누락되지 않도록 프롬프트에 자동 추가하고 임시 파일로 저장한다.
-TMP="$(mktemp -t orca-dispatch)"
+TMP="$(mktemp "${TMPDIR:-/tmp}/orca-dispatch.XXXXXX")"
 { cat "$PROMPT_FILE"; card_rule "$WT"; } > "$TMP"
 
 H="$(orca terminal create \

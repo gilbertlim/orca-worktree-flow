@@ -118,7 +118,7 @@ fi
 ram_gate
 
 printf '리뷰어를 띄운다: %s/%s (%s차, 커밋 %s개)\n' "$REPO" "$NAME" "$ROUND" "$AHEAD"
-TMP="$(mktemp -t orca-review)"
+TMP="$(mktemp "${TMPDIR:-/tmp}/orca-review.XXXXXX")"
 printf '%s%s\n' "$BODY" "$OUT_RULE" > "$TMP"
 
 H="$(orca terminal create \

@@ -46,7 +46,7 @@ if H="$(load_handle "$REPO" "$NAME" work 2>/dev/null)"; then
 else
   printf '작업 에이전트가 없다. 같은 워크트리에 새로 띄운다.\n'
   ram_gate
-  TMP="$(mktemp -t orca-handback)"
+  TMP="$(mktemp "${TMPDIR:-/tmp}/orca-handback.XXXXXX")"
   {
     printf '너는 이 worktree(%s, 브랜치 %s)의 담당 개발자다. 이 워크트리만 수정한다.\n\n%s\n' \
       "$REPO" "$NAME" "$MSG"

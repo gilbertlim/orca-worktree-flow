@@ -30,4 +30,8 @@ case "$avail" in ''|*[!0-9]*) echo "avail_mb 가 숫자를 안 냈다: $avail"; 
 ( RAM_GATE_MB=1 ram_gate ) || { echo "문턱 1MB 를 못 넘었다"; exit 1; }
 if ( RAM_GATE_MB=$((avail + 100000)) ram_gate ) 2>/dev/null; then echo "가용보다 큰 문턱을 안 막았다"; exit 1; fi
 
+# mktemp 는 템플릿에 XXXXXX 를 직접 준다. GNU mktemp(리눅스, WSL)는 -t 이름만 주면 "too few X's" 로 죽는다.
+if grep -n 'mktemp -t' "$(dirname "${BASH_SOURCE[0]}")"/*.sh | grep -v 'lib-test.sh'; then echo "GNU 에서 죽는 mktemp -t 가 있다"; exit 1; fi
+for n in dispatch handback review; do f="$(mktemp "${TMPDIR:-/tmp}/orca-$n.XXXXXX")" && rm -f "$f" || { echo "mktemp 템플릿이 실패했다"; exit 1; }; done
+
 echo "ok"
